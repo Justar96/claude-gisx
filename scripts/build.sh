@@ -6,11 +6,11 @@ set -euo pipefail
 #                                      can't cross-compile to from this host)
 #   ./scripts/build.sh <target>...     build only the listed targets
 #
-# Targets: linux-x64 linux-arm64 darwin-arm64
+# Targets: linux-x64 linux-arm64 darwin-arm64 windows-x64
 #
 # Note: cross-compilation needs Bun to download a runtime for the target
 # platform. Older Bun versions (or canary builds) may not have every runtime
-# published. CI is the reliable place to build all three — each platform runs
+# published. CI is the reliable place to build them all — each platform runs
 # `./scripts/build.sh <its-own-target>` on its native runner.
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -20,7 +20,7 @@ VERSION=$(node -p "require('./package.json').version" 2>/dev/null \
         || bun -e 'console.log(require("./package.json").version)' 2>/dev/null \
         || echo "dev")
 
-ALL_TARGETS=(linux-x64 linux-arm64 darwin-arm64)
+ALL_TARGETS=(linux-x64 linux-arm64 darwin-arm64 windows-x64)
 if [ $# -eq 0 ]; then
     SELECTED=("${ALL_TARGETS[@]}")
 else
@@ -32,7 +32,9 @@ failed=()
 built=()
 
 for target in "${SELECTED[@]}"; do
-    out="dist/claude-gisx-${target}"
+    ext=""
+    [[ "$target" == windows-* ]] && ext=".exe"
+    out="dist/claude-gisx-${target}${ext}"
     echo "→ building ${target} → ${out}"
     if bun build src/cli.ts \
         --compile \

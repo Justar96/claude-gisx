@@ -7,10 +7,6 @@
     Downloads the matching Windows binary from GitHub Releases and wires it
     into ~/.claude/settings.json so Claude Code uses it as the statusline.
 
-    Note: the current claude-gisx release only ships linux and darwin
-    binaries. This installer is provided so the documented PowerShell flow
-    works once Windows builds are added (see .github/workflows/release.yml).
-
 .EXAMPLE
     irm https://raw.githubusercontent.com/Justar96/claude-gisx/main/install.ps1 | iex
 
@@ -45,10 +41,15 @@ Write-Host "  github.com/$Repo" -ForegroundColor DarkGray
 Write-Host ""
 
 # ── detect arch ───────────────────────────────────────────────────────────
-$arch = switch ([System.Runtime.InteropServices.RuntimeInformation]::ProcessArchitecture) {
-    'X64'   { 'x64' }
-    'Arm64' { 'arm64' }
-    default { throw "unsupported architecture: $_" }
+# PROCESSOR_ARCHITEW6432 wins when 32-bit PowerShell is hosted on 64-bit Windows;
+# fall back to PROCESSOR_ARCHITECTURE otherwise. Both are always set on Windows.
+$rawArch = $env:PROCESSOR_ARCHITEW6432
+if (-not $rawArch) { $rawArch = $env:PROCESSOR_ARCHITECTURE }
+$arch = switch ($rawArch.ToUpperInvariant()) {
+    'AMD64' { 'x64' }
+    'ARM64' { 'arm64' }
+    'X86'   { throw "32-bit Windows is not supported. Build from source: https://github.com/$Repo#build-from-source" }
+    default { throw "unsupported architecture: '$rawArch'" }
 }
 $target = "windows-$arch"
 Write-Step "platform   $target"
