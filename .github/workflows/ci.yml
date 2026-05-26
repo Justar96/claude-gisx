@@ -1,0 +1,48 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: vet + fmt + test
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version: "1.23"
+          check-latest: true
+          cache: false
+
+      - name: gofmt -d
+        run: |
+          out=$(gofmt -d .)
+          if [ -n "$out" ]; then
+            echo "::error::gofmt found unformatted files:"
+            echo "$out"
+            exit 1
+          fi
+
+      - name: go vet
+        run: go vet ./...
+
+      - name: go test
+        run: go test -race -count=1 ./...
+
+      - name: go build (host)
+        run: go build -trimpath -ldflags="-s -w" -o /tmp/claude-gisx .
+
+      - name: smoke test
+        run: |
+          /tmp/claude-gisx version
+          echo '{"model":{"display_name":"Opus"},"context_window":{"used_percentage":15,"context_window_size":200000}}' \
+            | /tmp/claude-gisx

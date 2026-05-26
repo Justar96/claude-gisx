@@ -1,0 +1,17 @@
+.DS_Store
+*.log
+dist/
+*.exe
+*.test
+*.out
+
+# editor / IDE
+.idea/
+.vscode/
+*.swp
+
+# accidental drops
+*.png
+*.jpg
+*.jpeg
+*.gif
