@@ -1,0 +1,45 @@
+{
+  "name": "claude-gisx",
+  "version": "1.0.0",
+  "description": "A rich, dynamic statusline for Claude Code CLI with context window visualization, rate limits, git info, and session tracking",
+  "license": "MIT",
+  "type": "module",
+  "bin": {
+    "claude-gisx": "./dist/claude-gisx"
+  },
+  "scripts": {
+    "dev": "bun run src/cli.ts",
+    "build": "scripts/build.sh linux-x64",
+    "build:all": "scripts/build.sh",
+    "typecheck": "tsc --noEmit",
+    "clean": "rm -rf dist"
+  },
+  "keywords": [
+    "claude",
+    "claude-code",
+    "statusline",
+    "cli",
+    "terminal",
+    "gisx"
+  ],
+  "files": [
+    "dist/",
+    "install.sh",
+    "install.ps1"
+  ],
+  "engines": {
+    "bun": ">=1.1"
+  },
+  "os": [
+    "linux",
+    "darwin"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Justar96/claude-gisx"
+  },
+  "devDependencies": {
+    "bun-types": "latest",
+    "typescript": "^5.6.0"
+  }
+}
