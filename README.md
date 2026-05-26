@@ -190,10 +190,10 @@ git clone https://github.com/Justar96/claude-gisx
 cd claude-gisx
 bun install
 bun run build              # builds for the host platform → dist/claude-gisx-<target>
-bun run build:all          # tries all four targets (needs Bun stable for cross-compile)
+bun run build:all          # tries all three targets (needs Bun stable for cross-compile)
 ```
 
-Cross-compilation requires Bun to download a runtime for each target. CI builds each platform on its native runner via `.github/workflows/release.yml`. Tag with `v*` to trigger a release build that uploads all four binaries plus `SHA256SUMS` to GitHub Releases.
+Releases ship `linux-x64`, `linux-arm64`, and `darwin-arm64` binaries. Intel Macs aren't built — Apple Silicon only on darwin. Cross-compilation needs Bun to download a runtime for each target; CI builds each platform on its native runner via `.github/workflows/release.yml`. Tag with `v*` to trigger a release build that uploads the three binaries plus `SHA256SUMS` to GitHub Releases.
 
 ## License
 

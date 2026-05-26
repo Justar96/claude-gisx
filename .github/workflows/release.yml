@@ -13,10 +13,7 @@ jobs:
   build:
     name: build (${{ matrix.target }})
     runs-on: ${{ matrix.runner }}
-    # macos-13 (Intel) runners on public repos can sit in the queue for an
-    # hour+. Optional targets don't gate the release — they ship next time.
-    continue-on-error: ${{ matrix.optional == true }}
-    timeout-minutes: ${{ matrix.optional == true && 20 || 30 }}
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
@@ -27,9 +24,6 @@ jobs:
             runner: ubuntu-24.04-arm
           - target: darwin-arm64
             runner: macos-14
-          - target: darwin-x64
-            runner: macos-13
-            optional: true
     steps:
       - uses: actions/checkout@v4
 
