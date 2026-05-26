@@ -100,6 +100,8 @@ If you'd rather skip the installer wiring, add this yourself to `~/.claude/setti
 
 The `command` must resolve on the `PATH` Claude Code uses; if `~/.local/bin` isn't on it, use the absolute path.
 
+**Windows**: use forward slashes in the path (`"C:/Users/you/AppData/Local/Programs/claude-gisx/claude-gisx.exe"`). Claude Code routes the command through Git Bash on Windows, which interprets backslashes as escape characters and silently drops stdout. The installer writes forward slashes automatically; this only matters if you edit settings.json by hand.
+
 ## Uninstall
 
 ```bash

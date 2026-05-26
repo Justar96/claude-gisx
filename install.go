@@ -155,16 +155,30 @@ func installCmd(opts installOpts) int {
 		}
 	}
 
-	// On Windows, Claude Code spawns the statusline without a shell so PATHEXT
-	// and PATH aren't reliably consulted. Use the running binary's absolute
-	// path. Linux/macOS keep the bare name.
+	// On Windows, Claude Code routes statusLine.command through Git Bash (when
+	// present) or PowerShell. Git Bash eats backslashes as escape characters,
+	// so an absolute path written with native separators silently breaks —
+	// the binary launches but stdout disappears. Forward slashes work in both
+	// shells and in Windows native CreateProcess. Linux/macOS keep the bare
+	// name so PATH does the work.
 	command := "claude-gisx"
 	if runtime.GOOS == "windows" {
 		if exe, err := os.Executable(); err == nil {
-			command = exe
+			command = strings.ReplaceAll(exe, `\`, "/")
 		}
 	}
-	s["statusLine"] = map[string]any{"type": "command", "command": command}
+	// Preserve any extra keys (e.g. statusLine.padding) the user added to our
+	// entry. We only overwrite the two fields we actually own.
+	var sl map[string]any
+	if isOurs(s) {
+		sl, _ = s["statusLine"].(map[string]any)
+	}
+	if sl == nil {
+		sl = map[string]any{}
+	}
+	sl["type"] = "command"
+	sl["command"] = command
+	s["statusLine"] = sl
 	if err := writeJSONFile(settingsPath(), s); err != nil {
 		fmt.Fprintf(os.Stderr, "  %s write failed: %v\n", failMark, err)
 		return 1

@@ -255,6 +255,6 @@ func renderStatusline(stdinJSON string) {
 		_, _ = io.WriteString(w, R.String()+"\n")
 	}
 	if T != "" {
-		_, _ = io.WriteString(w, T)
+		_, _ = io.WriteString(w, T+"\n")
 	}
 }
