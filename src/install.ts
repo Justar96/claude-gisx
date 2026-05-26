@@ -241,7 +241,11 @@ export function installCmd(opts: Options = {}): number {
   if (s.statusLine && !isOurs(s)) {
     console.log(`  ${dot} backed up: ${c.dim}${JSON.stringify(s.statusLine)}${c.reset}`);
   }
-  s.statusLine = { type: "command", command: "claude-gisx" };
+  // On Windows, Claude Code spawns the statusline without a shell so PATHEXT
+  // and PATH aren't reliably consulted. Use the running binary's absolute
+  // path so resolution can't fail. Linux/macOS keep the bare name.
+  const command = process.platform === "win32" ? process.execPath : "claude-gisx";
+  s.statusLine = { type: "command", command };
   writeJSON(SETTINGS, s);
   console.log(`  ${ok} installed`);
   console.log();

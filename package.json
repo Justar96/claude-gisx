@@ -1,6 +1,6 @@
 {
   "name": "claude-gisx",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "description": "A rich, dynamic statusline for Claude Code CLI with context window visualization, rate limits, git info, and session tracking",
   "license": "MIT",
   "type": "module",
