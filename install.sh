@@ -139,8 +139,10 @@ esac
 if [ -z "$SKIP_SETUP" ]; then
     echo
     say "running ${bold}claude-gisx setup${rst}…"
-    # </dev/null so an inherited stdin (curl | bash) can't be mistaken for piped JSON
-    if ! "${INSTALL_DIR}/claude-gisx" setup </dev/null; then
+    # --force so reinstalling refreshes settings.json with the current binary's
+    # command path. </dev/null so curl|bash's inherited stdin isn't mistaken
+    # for piped JSON.
+    if ! "${INSTALL_DIR}/claude-gisx" setup --force </dev/null; then
         fail "setup failed — run '${INSTALL_DIR}/claude-gisx setup' manually" 4
     fi
 fi

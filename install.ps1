@@ -123,7 +123,9 @@ if (-not $onPath) {
 if (-not $SkipSetup) {
     Write-Host ""
     Write-Step "running 'claude-gisx setup'..."
-    & $dest setup
+    # --force so reinstalling refreshes settings.json with the current binary's
+    # command path (e.g. when upgrading from a version that wrote a bare name).
+    & $dest setup --force
     if ($LASTEXITCODE -ne 0) {
         Write-Err "setup failed — run '$dest setup' manually"
         exit 4

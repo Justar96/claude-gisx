@@ -237,9 +237,14 @@ export function installCmd(opts: Options = {}): number {
   }
 
   preview();
-  saveBackup(s);
-  if (s.statusLine && !isOurs(s)) {
-    console.log(`  ${dot} backed up: ${c.dim}${JSON.stringify(s.statusLine)}${c.reset}`);
+  // Only snapshot the prior state on a fresh install. On --force reinstall the
+  // current entry is already ours, so overwriting the backup would clobber the
+  // original pre-gisx statusLine and prevent uninstall from restoring it.
+  if (!isOurs(s)) {
+    saveBackup(s);
+    if (s.statusLine) {
+      console.log(`  ${dot} backed up: ${c.dim}${JSON.stringify(s.statusLine)}${c.reset}`);
+    }
   }
   // On Windows, Claude Code spawns the statusline without a shell so PATHEXT
   // and PATH aren't reliably consulted. Use the running binary's absolute
