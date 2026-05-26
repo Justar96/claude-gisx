@@ -42,46 +42,47 @@ function parseFlags(args: string[]): { positional: string[]; flags: Set<string> 
 }
 
 async function main(): Promise<number> {
-  const argv = process.argv.slice(2);
-
-  // Piped stdin means Claude Code is invoking us as a statusline — honor that
-  // contract even if stray args came along.
-  const stdin = readStdinSync();
-  if (stdin) {
-    await renderStatusline(stdin);
-    return 0;
-  }
-
-  const { positional, flags } = parseFlags(argv);
+  const { positional, flags } = parseFlags(process.argv.slice(2));
   const cmd = positional[0];
 
-  if (!cmd) {
-    helpScreen(VERSION);
-    return 0;
+  // A subcommand wins outright — never touch stdin, which can block when the
+  // caller (e.g. `curl | bash` running install.sh) hands us an inherited pipe.
+  if (cmd) {
+    switch (cmd) {
+      case "help":
+      case "--help":
+      case "-h":
+        helpScreen(VERSION);
+        return 0;
+      case "version":
+      case "--version":
+      case "-v":
+        console.log(VERSION);
+        return 0;
+      case "setup":
+        return installCmd({ force: flags.has("force"), noCheck: flags.has("no-check") });
+      case "uninstall":
+        return uninstallCmd({ force: flags.has("force") });
+      case "status":
+        return statusCmd();
+      default:
+        process.stderr.write(`unknown command: ${cmd}\n`);
+        process.stderr.write(`run 'claude-gisx help' for usage\n`);
+        return 1;
+    }
   }
 
-  switch (cmd) {
-    case "help":
-    case "--help":
-    case "-h":
-      helpScreen(VERSION);
+  // No args: if stdin is piped (Claude Code's statusline call), render from
+  // it; otherwise show the help screen.
+  if (!process.stdin.isTTY) {
+    const stdin = readStdinSync();
+    if (stdin.trim()) {
+      await renderStatusline(stdin);
       return 0;
-    case "version":
-    case "--version":
-    case "-v":
-      console.log(VERSION);
-      return 0;
-    case "setup":
-      return installCmd({ force: flags.has("force"), noCheck: flags.has("no-check") });
-    case "uninstall":
-      return uninstallCmd({ force: flags.has("force") });
-    case "status":
-      return statusCmd();
-    default:
-      process.stderr.write(`unknown command: ${cmd}\n`);
-      process.stderr.write(`run 'claude-gisx help' for usage\n`);
-      return 1;
+    }
   }
+  helpScreen(VERSION);
+  return 0;
 }
 
 main()
