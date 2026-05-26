@@ -1,4 +1,4 @@
-package main
+package app
 
 import (
 	"encoding/json"
@@ -9,7 +9,7 @@ import (
 func helpScreen() {
 	state, otherCmd := detectInstallState()
 	fmt.Println()
-	fmt.Printf("  %s%sclaude-gisx%s %sv%s%s\n", bold, blue, reset, dim, version, reset)
+	fmt.Printf("  %s%sclaude-gisx%s %sv%s%s\n", bold, blue, reset, dim, Version, reset)
 	fmt.Printf("  %srich, dynamic statusline for Claude Code%s\n\n", dimGray, reset)
 
 	switch {
