@@ -188,12 +188,13 @@ export CLAUDE_GISX_PLUGIN_CACHE=60   # poll your API at most once per minute
 ```bash
 git clone https://github.com/Justar96/claude-gisx
 cd claude-gisx
-bun install
-bun run build              # builds for the host platform → dist/claude-gisx-<target>
-bun run build:all          # tries all four targets (needs Bun stable for cross-compile)
+./scripts/build.sh                # builds all four targets into dist/
+./scripts/build.sh linux-x64      # build just one
 ```
 
-Releases ship `linux-x64`, `linux-arm64`, `darwin-arm64`, and `windows-x64` binaries. Intel Macs aren't built — Apple Silicon only on darwin. Cross-compilation needs Bun to download a runtime for each target; CI builds each platform on its native runner via `.github/workflows/release.yml`. Tag with `v*` to trigger a release build that uploads the four binaries plus `SHA256SUMS` to GitHub Releases.
+Requires Go 1.23+. Pure Go, no cgo, no external dependencies — `go build` produces a static binary in seconds. Cross-compilation is built into the toolchain so a single Linux runner builds all four release binaries in CI.
+
+Releases ship `linux-x64`, `linux-arm64`, `darwin-arm64`, and `windows-x64` binaries (~6 MB each). Intel Macs aren't built — Apple Silicon only on darwin. Tag with `v*` to trigger `.github/workflows/release.yml`, which uploads the four binaries plus `SHA256SUMS` to GitHub Releases.
 
 ## License
 
