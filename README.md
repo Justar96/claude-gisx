@@ -3,8 +3,8 @@
 A rich, dynamic statusline for [Claude Code](https://docs.claude.com/en/docs/claude-code) — single self-contained binary, no runtime deps.
 
 ```
-Claude Opus 4.7 · ████░░░░░░░░░░░ 28%/1M +ext · myproject:main · 42m · $1.20 · ● think · ▲ high
-5h 32% resets 3h 12m · 7d 8% resets 5d 2h · extra $4.20/$20.00
+Claude Opus 4.8/high · ████░░░░░░░░░░░ 28%/1M +ext · myproject:main · 42m · $1.20
+5h 32% resets 3h 12m · 7d 8% resets 5d 2h · Fable 61% resets 5d 2h · extra $4.20/$20.00
 shift+tab interrupt · /compact free context · esc esc cancel
 ```
 
@@ -77,12 +77,14 @@ $ claude-gisx
 - **Auto-compact notice** — reads Claude Code's actual auto-compact env vars (`CLAUDE_AUTOCOMPACT_PCT_OVERRIDE`, `CLAUDE_CODE_AUTO_COMPACT_WINDOW`, `DISABLE_COMPACT`). When you've configured a threshold, a bold red `⚠ compact N%` badge appears once usage reaches it. With `DISABLE_COMPACT` set, the badge becomes a dim `compact:off`. No env var set → no badge
 - **Extended-context badge** — `+ext` appears when a 1M-model session crosses the 200k boundary (`exceeds_200k_tokens`)
 - **Dynamic color coding** — green / cyan / orange / yellow / red based on usage thresholds
-- **Rate limit tracking** — 5-hour and 7-day usage with time-to-reset
+- **Rate limit tracking** — 5-hour and 7-day usage with time-to-reset, plus any per-model quota your plan tracks separately (e.g. `Fable 61% resets 5d 2h`)
 - **Git integration** — branch name and dirty state, plus worktree (`⌥`) and PR (`PR #1234`, colored by review state) indicators when present
 - **Session duration** and **cost** tracking from the live `cost.*` fields
-- **Live thinking / effort** indicators from the session's `thinking.enabled` and `effort.level` fields
+- **Effort level** rendered right on the model name (`Claude Opus 4.8/high`), from the session's `effort.level` — hidden for models with no effort dial
+- **Fast mode** chip (`fast`) when the session has fast mode on
 - **Extra usage** credits display (OAuth accounts)
 - **Vim mode**, **output style**, and **subagent** indicators when active
+- **Rotating third line** — keyboard tips, plus **what's new** parsed from Claude Code's own changelog cache (`~/.claude/cache/changelog.md`, feature entries only — fixes and links are skipped) and **usage nudges**: `weekly 65% used · /usage-credits raise your weekly limit` past 50%, and a `this week 15.7M tokens · ▲18% vs last week` trend summed from `dailyModelTokens` in `~/.claude/stats-cache.json`. All local, no network. Warnings (auto-compact, rate limit) always win the line
 - **Third-line plugin** — point `CLAUDE_GISX_PLUGIN` at any shell command (including `curl` against your own API) and its stdout becomes the third line. Timeout + caching are built in. See [Third-line plugin](#third-line-plugin)
 
 ## Manual setup

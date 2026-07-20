@@ -38,20 +38,19 @@ func banner() {
 
 func preview() {
 	fmt.Printf("  %spreview%s\n", dimGray, reset)
-	fmt.Printf("  %s%sClaude Opus 4.7%s %s %s██%s██%s%s░░░░░░░░░░░%s %s28%%%s%s/%s%s1M%s %s+ext%s %s %sclaude-gisx%s%s:%s%smain%s %s %s12m%s %s %s$1.20%s %s %s● think%s %s %s▲ high%s\n",
-		bold, blue, reset, dotMark,
+	fmt.Printf("  %s%sClaude Opus 4.8%s%s/%s%shigh%s %s %s██%s██%s%s░░░░░░░░░░░%s %s28%%%s%s/%s%s1M%s %s+ext%s %s %sclaude-gisx%s%s:%s%smain%s %s %s12m%s %s %s$1.20%s\n",
+		bold, blue, reset, dim, reset, cyan, reset, dotMark,
 		green, cyan, reset, dimGray, reset,
 		green, reset, dim, reset, dimGray, reset,
 		dimGray, reset,
 		dotMark, cyan, reset, dim, reset, green, reset,
 		dotMark, white, reset,
 		dotMark, white, reset,
-		dotMark, magenta, reset,
-		dotMark, cyan, reset,
 	)
-	fmt.Printf("  %s5h%s %s12%%%s %sresets%s %s4h 2m%s %s %s7d%s %s3%%%s %sresets%s %s6d 1h%s\n",
+	fmt.Printf("  %s5h%s %s12%%%s %sresets%s %s4h 2m%s %s %s7d%s %s3%%%s %sresets%s %s6d 1h%s %s %sFable%s %s61%%%s %sresets%s %s6d 1h%s\n",
 		white, reset, green, reset, dimGray, reset, green, reset,
 		dotMark, white, reset, green, reset, dimGray, reset, green, reset,
+		dotMark, white, reset, orange, reset, dimGray, reset, yellow, reset,
 	)
 	fmt.Printf("  %sshift+tab%s %sinterrupt%s %s %s/compact%s %sfree context%s %s %sesc esc%s %scancel%s\n",
 		dimGray, reset, dim, reset, dotMark,

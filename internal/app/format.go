@@ -58,6 +58,13 @@ func fmtCtxLabel(size int) string {
 	}
 }
 
+func maxi(a, b int) int {
+	if a > b {
+		return a
+	}
+	return b
+}
+
 func clampi(n, lo, hi int) int {
 	if n < lo {
 		return lo

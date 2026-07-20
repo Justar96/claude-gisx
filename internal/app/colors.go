@@ -38,6 +38,19 @@ func pctColor(p int) string {
 	}
 }
 
+func effortColor(level string) string {
+	switch level {
+	case "max", "xhigh":
+		return red
+	case "high":
+		return cyan
+	case "low":
+		return dimGray
+	default:
+		return white
+	}
+}
+
 func remainingColor(p int) string {
 	switch {
 	case p >= 70:

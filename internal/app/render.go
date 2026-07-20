@@ -17,8 +17,8 @@ type sessionInput struct {
 	ContextWindow *contextInfo   `json:"context_window,omitempty"`
 	Exceeds200k   bool           `json:"exceeds_200k_tokens,omitempty"`
 	Cost          *costInfo      `json:"cost,omitempty"`
-	Thinking      *enabledInfo   `json:"thinking,omitempty"`
 	Effort        *levelInfo     `json:"effort,omitempty"`
+	FastMode      bool           `json:"fast_mode,omitempty"`
 	OutputStyle   *nameInfo      `json:"output_style,omitempty"`
 	Vim           *modeInfo      `json:"vim,omitempty"`
 	Agent         *nameInfo      `json:"agent,omitempty"`
@@ -26,9 +26,6 @@ type sessionInput struct {
 	Worktree      *nameInfo      `json:"worktree,omitempty"`
 	RateLimits    *rateLimits    `json:"rate_limits,omitempty"`
 	SessionID     string         `json:"session_id,omitempty"`
-	// Use pointers so we can distinguish "unset" from "set to default value".
-	thinkingSet bool
-	effortSet   bool
 }
 
 type modelInfo struct {
@@ -37,6 +34,7 @@ type modelInfo struct {
 }
 type workspaceInfo struct {
 	CurrentDir string `json:"current_dir,omitempty"`
+	ProjectDir string `json:"project_dir,omitempty"`
 }
 type contextInfo struct {
 	UsedPercentage    *float64 `json:"used_percentage,omitempty"`
@@ -45,9 +43,6 @@ type contextInfo struct {
 type costInfo struct {
 	TotalCostUSD    float64 `json:"total_cost_usd,omitempty"`
 	TotalDurationMS int64   `json:"total_duration_ms,omitempty"`
-}
-type enabledInfo struct {
-	Enabled bool `json:"enabled,omitempty"`
 }
 type levelInfo struct {
 	Level string `json:"level,omitempty"`
@@ -77,18 +72,10 @@ func renderStatusline(stdinJSON string) {
 		return
 	}
 	var data sessionInput
-	// Unmarshal with raw map to detect presence of "thinking"/"effort" keys.
-	var raw map[string]json.RawMessage
-	if err := json.Unmarshal([]byte(stdinJSON), &raw); err != nil {
-		fmt.Print("Claude")
-		return
-	}
 	if err := json.Unmarshal([]byte(stdinJSON), &data); err != nil {
 		fmt.Print("Claude")
 		return
 	}
-	_, data.thinkingSet = raw["thinking"]
-	_, data.effortSet = raw["effort"]
 
 	modelName := "Claude"
 	if data.Model != nil && data.Model.DisplayName != "" {
@@ -106,6 +93,8 @@ func renderStatusline(stdinJSON string) {
 	switch {
 	case data.Workspace != nil && data.Workspace.CurrentDir != "":
 		cwd = data.Workspace.CurrentDir
+	case data.Workspace != nil && data.Workspace.ProjectDir != "":
+		cwd = data.Workspace.ProjectDir
 	case data.Cwd != "":
 		cwd = data.Cwd
 	default:
@@ -119,23 +108,11 @@ func renderStatusline(stdinJSON string) {
 	}
 	has1M := ctxSize > 200_000
 
-	thinkingOn := data.Thinking != nil && data.Thinking.Enabled
+	// `effort` is only sent for models that support it — absent means the
+	// model has no effort dial, so don't invent one from settings.
 	effortLevel := ""
 	if data.Effort != nil {
 		effortLevel = data.Effort.Level
-	}
-	if !data.thinkingSet || !data.effortSet {
-		settings := readSettings()
-		if !data.thinkingSet {
-			if v, _ := settings["alwaysThinkingEnabled"].(bool); v {
-				thinkingOn = true
-			}
-		}
-		if effortLevel == "" {
-			if v, _ := settings["effortLevel"].(string); v != "" {
-				effortLevel = v
-			}
-		}
 	}
 
 	cs := computeCompactState(ctxSize)
@@ -146,6 +123,13 @@ func renderStatusline(stdinJSON string) {
 	// ── Line 1: model + bar + workspace + session meta ────────────────────
 	var L strings.Builder
 	L.WriteString(bold + blue + modelName + reset)
+	if effortLevel != "" {
+		L.WriteString(dim + "/" + reset + effortColor(effortLevel) + effortLevel + reset)
+	}
+	if data.FastMode {
+		// A word, not an emoji — emoji widths vary per terminal and shift the line.
+		L.WriteString(sep + yellow + "fast" + reset)
+	}
 	L.WriteString(sep + ctxBar(pctUsed) + " " + pctColor(pctUsed) + fmt.Sprintf("%d%%", pctUsed) + reset +
 		dim + "/" + reset + dimGray + fmtCtxLabel(ctxSize) + reset)
 
@@ -175,23 +159,6 @@ func renderStatusline(stdinJSON string) {
 			L.WriteString(sep + white + "$" + costStr + reset)
 		}
 	}
-	if thinkingOn {
-		L.WriteString(sep + magenta + "● think" + reset)
-	} else {
-		L.WriteString(sep + dim + "○ think" + reset)
-	}
-	if effortLevel != "" {
-		switch effortLevel {
-		case "max", "xhigh":
-			L.WriteString(sep + red + "▲ " + effortLevel + reset)
-		case "high":
-			L.WriteString(sep + cyan + "▲ " + effortLevel + reset)
-		case "low":
-			L.WriteString(sep + dimGray + "▽ " + effortLevel + reset)
-		default:
-			L.WriteString(sep + dim + "◆ " + effortLevel + reset)
-		}
-	}
 	if data.OutputStyle != nil && data.OutputStyle.Name != "" && data.OutputStyle.Name != "default" {
 		L.WriteString(sep + dimGray + "style:" + reset + cyan + data.OutputStyle.Name + reset)
 	}
@@ -218,6 +185,7 @@ func renderStatusline(stdinJSON string) {
 	var R strings.Builder
 	fivePct := 0
 	weekPct := 0
+	limitPct := 0
 	if data.RateLimits != nil {
 		if data.RateLimits.FiveHour != nil {
 			fivePct = int(data.RateLimits.FiveHour.UsedPercentage)
@@ -239,15 +207,40 @@ func renderStatusline(stdinJSON string) {
 				R.WriteString(" " + dimGray + "resets" + reset + " " + remainingColor(weekRem) + s + reset)
 			}
 		}
-		if extra := fetchExtraUsage(context.Background()); extra != nil {
-			R.WriteString(sep + dimGray + "extra" + reset + " " + white + "$" + extra.Used +
-				dimGray + "/" + reset + white + "$" + extra.Limit + reset)
+	}
+	limitPct = maxi(fivePct, weekPct)
+
+	// Per-model quotas (e.g. Fable) and extra credits come from the OAuth
+	// usage endpoint — the statusline payload only carries 5h/7d.
+	if u := fetchUsage(context.Background()); u != nil {
+		for _, s := range u.Scoped {
+			if R.Len() > 0 {
+				R.WriteString(sep)
+			}
+			R.WriteString(white + s.Name + reset + " " + pctColor(s.Pct) + fmt.Sprintf("%d%%", s.Pct) + reset)
+			if t := fmtRemaining(s.ResetsAt); t != "" {
+				R.WriteString(" " + dimGray + "resets" + reset + " " + remainingColor(100-s.Pct) + t + reset)
+			}
+			limitPct = maxi(limitPct, s.Pct)
+		}
+		if u.Extra != nil {
+			if R.Len() > 0 {
+				R.WriteString(sep)
+			}
+			R.WriteString(dimGray + "extra" + reset + " " + white + "$" + u.Extra.Used +
+				dimGray + "/" + reset + white + "$" + u.Extra.Limit + reset)
 		}
 	}
 
 	// ── Line 3: plugin output or built-in tip ─────────────────────────────
 	pluginOut := runPlugin(stdinJSON)
-	T := tipLine(pctUsed, fivePct, weekPct, cs, pluginOut)
+	T := tipLine(tipContext{
+		ctxPct:   pctUsed,
+		limitPct: limitPct,
+		weekPct:  weekPct,
+		compact:  cs,
+		plugin:   pluginOut,
+	})
 
 	w := os.Stdout
 	_, _ = io.WriteString(w, L.String()+"\n")

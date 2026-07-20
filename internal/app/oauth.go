@@ -17,15 +17,38 @@ type extraUsage struct {
 	Limit string
 }
 
-type oauthBody struct {
-	ExtraUsage *struct {
-		IsEnabled    bool    `json:"is_enabled"`
-		UsedCredits  float64 `json:"used_credits"`
-		MonthlyLimit float64 `json:"monthly_limit"`
-	} `json:"extra_usage,omitempty"`
+// A per-model quota the plan tracks separately from the 5h/7d buckets —
+// e.g. Fable's weekly allowance.
+type scopedLimit struct {
+	Name     string
+	Pct      int
+	ResetsAt int64 // unix seconds; 0 when unknown
 }
 
-func fetchExtraUsage(ctx context.Context) *extraUsage {
+type usage struct {
+	Extra  *extraUsage
+	Scoped []scopedLimit
+}
+
+type oauthBody struct {
+	ExtraUsage *struct {
+		IsEnabled    bool     `json:"is_enabled"`
+		UsedCredits  *float64 `json:"used_credits"`
+		MonthlyLimit *float64 `json:"monthly_limit"`
+	} `json:"extra_usage,omitempty"`
+	Limits []struct {
+		Kind     string  `json:"kind"`
+		Percent  float64 `json:"percent"`
+		ResetsAt string  `json:"resets_at"`
+		Scope    *struct {
+			Model *struct {
+				DisplayName string `json:"display_name"`
+			} `json:"model,omitempty"`
+		} `json:"scope,omitempty"`
+	} `json:"limits,omitempty"`
+}
+
+func fetchUsage(ctx context.Context) *usage {
 	cachePath := filepath.Join(cacheDir(), "statusline-extra-cache.json")
 	body := readCachedOAuth(cachePath, 60*time.Second)
 	if body == nil {
@@ -35,13 +58,45 @@ func fetchExtraUsage(ctx context.Context) *extraUsage {
 		// last-resort: any cached body, regardless of age
 		body = readCachedOAuth(cachePath, 365*24*time.Hour)
 	}
-	if body == nil || body.ExtraUsage == nil || !body.ExtraUsage.IsEnabled {
+	if body == nil {
 		return nil
 	}
-	return &extraUsage{
-		Used:  fmt.Sprintf("%.2f", body.ExtraUsage.UsedCredits/100),
-		Limit: fmt.Sprintf("%.2f", body.ExtraUsage.MonthlyLimit/100),
+	return body.toUsage()
+}
+
+func (body *oauthBody) toUsage() *usage {
+	u := &usage{}
+	if e := body.ExtraUsage; e != nil && e.IsEnabled && e.UsedCredits != nil && e.MonthlyLimit != nil {
+		u.Extra = &extraUsage{
+			Used:  fmt.Sprintf("%.2f", *e.UsedCredits/100),
+			Limit: fmt.Sprintf("%.2f", *e.MonthlyLimit/100),
+		}
 	}
+	for _, l := range body.Limits {
+		if l.Scope == nil || l.Scope.Model == nil || l.Scope.Model.DisplayName == "" {
+			continue
+		}
+		u.Scoped = append(u.Scoped, scopedLimit{
+			Name:     l.Scope.Model.DisplayName,
+			Pct:      int(l.Percent),
+			ResetsAt: parseResetsAt(l.ResetsAt),
+		})
+	}
+	if u.Extra == nil && len(u.Scoped) == 0 {
+		return nil
+	}
+	return u
+}
+
+func parseResetsAt(s string) int64 {
+	if s == "" {
+		return 0
+	}
+	t, err := time.Parse(time.RFC3339, s)
+	if err != nil {
+		return 0
+	}
+	return t.Unix()
 }
 
 func readCachedOAuth(p string, maxAge time.Duration) *oauthBody {
@@ -91,9 +146,6 @@ func doOAuthFetch(ctx context.Context, cachePath string) *oauthBody {
 	}
 	var b oauthBody
 	if err := json.Unmarshal(raw, &b); err != nil {
-		return nil
-	}
-	if b.ExtraUsage == nil {
 		return nil
 	}
 	_ = os.MkdirAll(filepath.Dir(cachePath), 0o755)
