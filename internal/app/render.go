@@ -231,6 +231,12 @@ func renderStatusline(stdinJSON string) {
 				dimGray + "/" + reset + white + "$" + u.Extra.Limit + reset)
 		}
 	}
+	if trend := weeklyTrend(); trend != "" {
+		if R.Len() > 0 {
+			R.WriteString(sep)
+		}
+		R.WriteString(trend)
+	}
 
 	// ── Line 3: plugin output or built-in tip ─────────────────────────────
 	pluginOut := runPlugin(stdinJSON)

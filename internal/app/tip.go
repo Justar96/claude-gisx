@@ -44,9 +44,6 @@ func tipLine(t tipContext) string {
 	if p := usagePromo(t.weekPct); p != "" {
 		pool = append(pool, p)
 	}
-	if p := weeklyTrend(); p != "" {
-		pool = append(pool, p)
-	}
 	if len(pool) == 0 {
 		return ""
 	}

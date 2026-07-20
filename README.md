@@ -4,7 +4,7 @@ A rich, dynamic statusline for [Claude Code](https://docs.claude.com/en/docs/cla
 
 ```
 Claude Opus 4.8/high · ████░░░░░░░░░░░ 28%/1M +ext · myproject:main · 42m · $1.20
-5h 32% resets 3h 12m · 7d 8% resets 5d 2h · Fable 61% resets 5d 2h · extra $4.20/$20.00
+5h 32% resets 3h 12m · 7d 8% resets 5d 2h · Fable 61% resets 5d 2h · extra $4.20/$20.00 · 15.7M ▼47%
 new in 2.1.215 · Claude no longer runs /verify and /code-review on its own
 ```
 
@@ -79,13 +79,14 @@ $ claude-gisx
 - **Extended-context badge** — `+ext` appears when a 1M-model session crosses the 200k boundary (`exceeds_200k_tokens`)
 - **Dynamic color coding** — green / cyan / orange / yellow / red based on usage thresholds
 - **Rate limit tracking** — 5-hour and 7-day usage with time-to-reset, plus any per-model quota your plan tracks separately (e.g. `Fable 61% resets 5d 2h`)
+- **Weekly token trend** — `15.7M ▼47%` closes the usage line: this week's tokens summed from `dailyModelTokens` in `~/.claude/stats-cache.json`, and the change against the previous week (green `▲` up, dim `▼` down). Measured against that cache's own newest date and hidden once it's >10 days stale, since Claude Code only refreshes it when you open `/usage`
 - **Git integration** — branch name and dirty state, plus worktree (`⌥`) and PR (`PR #1234`, colored by review state) indicators when present
 - **Session duration** and **cost** tracking from the live `cost.*` fields
 - **Effort level** rendered right on the model name (`Claude Opus 4.8/high`), from the session's `effort.level` — hidden for models with no effort dial
 - **Fast mode** chip (`fast`) when the session has fast mode on
 - **Extra usage** credits display (OAuth accounts)
 - **Vim mode**, **output style**, and **subagent** indicators when active
-- **Rotating third line** — **what's new** parsed from Claude Code's own changelog cache (`~/.claude/cache/changelog.md`, feature entries only — fixes and links are skipped), plus **usage nudges**: `weekly 65% used · /usage-credits raise your weekly limit` past 50%, and a `this week 15.7M tokens · ▲18% vs last week` trend summed from `dailyModelTokens` in `~/.claude/stats-cache.json`. All local, no network. Warnings (auto-compact, rate limit) take the line 2 renders out of 3 — they stay true for hours, so they yield every third render instead of blocking the rotation outright
+- **Rotating third line** — **what's new** parsed from Claude Code's own changelog cache (`~/.claude/cache/changelog.md`, feature entries only — fixes and links are skipped), plus **usage nudges**: `weekly 65% used · /usage-credits raise your weekly limit` past 50%. All local, no network. Warnings (auto-compact, rate limit) take the line 2 renders out of 3 — they stay true for hours, so they yield every third render instead of blocking the rotation outright
 - **Update notice** — when a newer release exists, the third line says so in drifting rainbow color: `✦ claude-gisx v1.2.0 available · claude-gisx update`. GitHub is checked at most once every 6 hours (cached in the temp dir, 1.5s timeout, silent on failure). Dev builds never nag; set `CLAUDE_GISX_NO_UPDATE_CHECK=1` to disable entirely
 - **Third-line plugin** — point `CLAUDE_GISX_PLUGIN` at any shell command (including `curl` against your own API) and its stdout becomes the third line. Timeout + caching are built in. See [Third-line plugin](#third-line-plugin)
 

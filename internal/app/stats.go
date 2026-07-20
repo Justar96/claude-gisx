@@ -20,8 +20,9 @@ type statsCache struct {
 	} `json:"dailyModelTokens"`
 }
 
-// weeklyTrend renders "this week 4.2M tokens · ▲18% vs last week", or "" when
-// there isn't enough recent data to say anything true.
+// weeklyTrend renders a compact "4.2M ▲18%" for the usage line — this week's
+// tokens and the change against the previous week. Empty when there isn't
+// enough recent data to say anything true.
 func weeklyTrend() string {
 	raw, err := os.ReadFile(statsPath())
 	if err != nil {
@@ -74,8 +75,7 @@ func renderWeeklyTrend(s statsCache, now time.Time) string {
 	if delta < 0 {
 		arrow, col, delta = "▼", dimGray, -delta
 	}
-	return dimGray + "this week " + fmtTokens(this) + " tokens" + reset + " " + dim + "·" + reset + " " +
-		col + fmt.Sprintf("%s%d%%", arrow, delta) + reset + " " + dim + "vs last week" + reset
+	return white + fmtTokens(this) + reset + " " + col + fmt.Sprintf("%s%d%%", arrow, delta) + reset
 }
 
 func fmtTokens(n int64) string {

@@ -47,10 +47,11 @@ func preview() {
 		dotMark, white, reset,
 		dotMark, white, reset,
 	)
-	fmt.Printf("  %s5h%s %s12%%%s %sresets%s %s4h 2m%s %s %s7d%s %s3%%%s %sresets%s %s6d 1h%s %s %sFable%s %s61%%%s %sresets%s %s6d 1h%s\n",
+	fmt.Printf("  %s5h%s %s12%%%s %sresets%s %s4h 2m%s %s %s7d%s %s3%%%s %sresets%s %s6d 1h%s %s %sFable%s %s61%%%s %sresets%s %s6d 1h%s %s %s15.7M%s %s▲18%%%s\n",
 		white, reset, green, reset, dimGray, reset, green, reset,
 		dotMark, white, reset, green, reset, dimGray, reset, green, reset,
 		dotMark, white, reset, orange, reset, dimGray, reset, yellow, reset,
+		dotMark, white, reset, green, reset,
 	)
 	fmt.Printf("  %snew in 2.1.215%s %s %sClaude no longer runs /verify and /code-review on its own%s\n",
 		dimGray, reset, dotMark, dim, reset,

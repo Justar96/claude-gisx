@@ -80,8 +80,8 @@ func TestRenderWeeklyTrend(t *testing.T) {
 		}
 		return 100_000
 	}), now)
-	if !strings.Contains(got, "this week 2.8M tokens") || !strings.Contains(got, "▲100%") {
-		t.Errorf("got %q, want 2.8M tokens and ▲100%%", stripANSI(got))
+	if stripANSI(got) != "2.8M ▲100%" {
+		t.Errorf("got %q, want %q", stripANSI(got), "2.8M ▲100%")
 	}
 
 	// Newest date well before now → stale, say nothing.
