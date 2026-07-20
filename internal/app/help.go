@@ -47,7 +47,7 @@ func helpScreen() {
 	bullet("CLAUDE_CODE_AUTO_COMPACT_WINDOW", "shrink the effective compaction window; badge remaps onto used %")
 	bullet("DISABLE_COMPACT                ", "disables auto-compact; statusline shows a dim compact:off badge")
 	bullet("CLAUDE_GISX_PLUGIN             ", "shell command whose stdout replaces the 3rd line (your own API, etc.)")
-	bullet("CLAUDE_GISX_NO_UPDATE_CHECK    ", "don't check GitHub for new releases (no rainbow update notice)")
+	bullet("CLAUDE_GISX_NO_UPDATE_CHECK    ", "don't check GitHub for new releases (no update notice)")
 	fmt.Println()
 
 	fmt.Printf("  %sHow it runs%s\n", bold, reset)

@@ -42,12 +42,14 @@ func pctColor(p int) string {
 	}
 }
 
-// rainbow cycles a palette across the string, one step per character. The
-// phase advances with the clock so the colors drift between renders.
-func rainbow(s string) string {
+// pinkTint shimmers a red-to-pink ramp across the string, one step per
+// character. The ramp runs back down so the colors never jump from the
+// lightest shade to the darkest; the phase advances with the clock, so the
+// tint drifts between renders.
+func pinkTint(s string) string {
 	palette := []string{
-		rgb(255, 95, 95), rgb(255, 165, 60), rgb(255, 220, 70),
-		rgb(90, 220, 110), rgb(80, 180, 255), rgb(180, 140, 255),
+		rgb(235, 60, 90), rgb(255, 90, 120), rgb(255, 125, 155),
+		rgb(255, 160, 190), rgb(255, 125, 155), rgb(255, 90, 120),
 	}
 	shift := int(time.Now().Unix())
 	var b strings.Builder

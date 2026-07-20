@@ -36,7 +36,7 @@ func tipLine(t tipContext) string {
 	// Rare and actionable, so it outranks the rotation — but not the warnings
 	// above, and not a user's own plugin line.
 	if tag := availableUpdate(6 * time.Hour); tag != "" {
-		return rainbow("✦ claude-gisx "+tag+" available") + " " + dim + "·" + reset + " " +
+		return pinkTint("✦ claude-gisx "+tag+" available") + " " + dim + "·" + reset + " " +
 			dimGray + "claude-gisx update" + reset
 	}
 
