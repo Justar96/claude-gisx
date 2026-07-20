@@ -52,10 +52,8 @@ func preview() {
 		dotMark, white, reset, green, reset, dimGray, reset, green, reset,
 		dotMark, white, reset, orange, reset, dimGray, reset, yellow, reset,
 	)
-	fmt.Printf("  %sshift+tab%s %sinterrupt%s %s %s/compact%s %sfree context%s %s %sesc esc%s %scancel%s\n",
-		dimGray, reset, dim, reset, dotMark,
-		dimGray, reset, dim, reset, dotMark,
-		dimGray, reset, dim, reset,
+	fmt.Printf("  %snew in 2.1.215%s %s %sClaude no longer runs /verify and /code-review on its own%s\n",
+		dimGray, reset, dotMark, dim, reset,
 	)
 	fmt.Println()
 }

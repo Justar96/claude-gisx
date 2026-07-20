@@ -5,7 +5,7 @@ A rich, dynamic statusline for [Claude Code](https://docs.claude.com/en/docs/cla
 ```
 Claude Opus 4.8/high · ████░░░░░░░░░░░ 28%/1M +ext · myproject:main · 42m · $1.20
 5h 32% resets 3h 12m · 7d 8% resets 5d 2h · Fable 61% resets 5d 2h · extra $4.20/$20.00
-shift+tab interrupt · /compact free context · esc esc cancel
+new in 2.1.215 · Claude no longer runs /verify and /code-review on its own
 ```
 
 ## Install
@@ -85,7 +85,7 @@ $ claude-gisx
 - **Fast mode** chip (`fast`) when the session has fast mode on
 - **Extra usage** credits display (OAuth accounts)
 - **Vim mode**, **output style**, and **subagent** indicators when active
-- **Rotating third line** — keyboard tips, plus **what's new** parsed from Claude Code's own changelog cache (`~/.claude/cache/changelog.md`, feature entries only — fixes and links are skipped) and **usage nudges**: `weekly 65% used · /usage-credits raise your weekly limit` past 50%, and a `this week 15.7M tokens · ▲18% vs last week` trend summed from `dailyModelTokens` in `~/.claude/stats-cache.json`. All local, no network. Warnings (auto-compact, rate limit) always win the line
+- **Rotating third line** — **what's new** parsed from Claude Code's own changelog cache (`~/.claude/cache/changelog.md`, feature entries only — fixes and links are skipped), plus **usage nudges**: `weekly 65% used · /usage-credits raise your weekly limit` past 50%, and a `this week 15.7M tokens · ▲18% vs last week` trend summed from `dailyModelTokens` in `~/.claude/stats-cache.json`. All local, no network. Warnings (auto-compact, rate limit) take the line 2 renders out of 3 — they stay true for hours, so they yield every third render instead of blocking the rotation outright
 - **Update notice** — when a newer release exists, the third line says so in drifting rainbow color: `✦ claude-gisx v1.2.0 available · claude-gisx update`. GitHub is checked at most once every 6 hours (cached in the temp dir, 1.5s timeout, silent on failure). Dev builds never nag; set `CLAUDE_GISX_NO_UPDATE_CHECK=1` to disable entirely
 - **Third-line plugin** — point `CLAUDE_GISX_PLUGIN` at any shell command (including `curl` against your own API) and its stdout becomes the third line. Timeout + caching are built in. See [Third-line plugin](#third-line-plugin)
 
@@ -161,7 +161,7 @@ The bottom (tip) line is a plugin point. Wire it to any shell command — includ
 
 | Env var | Default | Description |
 |---------|---------|-------------|
-| `CLAUDE_GISX_PLUGIN` | _(unset)_ | Shell command or script path. When set, replaces the built-in idle tips. |
+| `CLAUDE_GISX_PLUGIN` | _(unset)_ | Shell command or script path. When set, replaces the rotating what's-new / usage line. |
 | `CLAUDE_GISX_PLUGIN_TIMEOUT` | `2` | Seconds before the plugin is killed. Keep this low so the statusline stays responsive. |
 | `CLAUDE_GISX_PLUGIN_CACHE` | `30` | Seconds to cache the plugin's last successful stdout. Prevents hammering your API. |
 | `CLAUDE_GISX_NO_UPDATE_CHECK` | _(unset)_ | Set to anything to skip the GitHub release check and its rainbow update notice. |
