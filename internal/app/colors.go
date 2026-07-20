@@ -1,6 +1,10 @@
 package app
 
-import "fmt"
+import (
+	"fmt"
+	"strings"
+	"time"
+)
 
 // 24-bit ANSI escapes; produces empty strings when stdout isn't a terminal.
 var (
@@ -36,6 +40,27 @@ func pctColor(p int) string {
 	default:
 		return green
 	}
+}
+
+// rainbow cycles a palette across the string, one step per character. The
+// phase advances with the clock so the colors drift between renders.
+func rainbow(s string) string {
+	palette := []string{
+		rgb(255, 95, 95), rgb(255, 165, 60), rgb(255, 220, 70),
+		rgb(90, 220, 110), rgb(80, 180, 255), rgb(180, 140, 255),
+	}
+	shift := int(time.Now().Unix())
+	var b strings.Builder
+	for i, r := range s {
+		if r == ' ' {
+			b.WriteRune(r)
+			continue
+		}
+		b.WriteString(palette[(i+shift)%len(palette)])
+		b.WriteRune(r)
+	}
+	b.WriteString(reset)
+	return b.String()
 }
 
 func effortColor(level string) string {

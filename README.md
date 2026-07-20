@@ -66,6 +66,7 @@ $ claude-gisx
 | `claude-gisx` _(no stdin, no args)_ | Show the install/setup help screen. |
 | `claude-gisx setup` | Write `~/.claude/settings.json` so Claude Code uses claude-gisx. Backs up any existing `statusLine` to `~/.claude/.gisx/`. |
 | `claude-gisx status` | Inspect current settings and backup state. |
+| `claude-gisx update` | Download the latest release, verify its SHA-256 against the published `SHA256SUMS`, and replace the running binary in place. `--check` only reports, `--force` reinstalls the current version. |
 | `claude-gisx uninstall` | Restore the previous `statusLine` (or remove it). |
 | `claude-gisx help` / `--help` | Help screen. |
 | `claude-gisx version` | Print the binary version. |
@@ -85,6 +86,7 @@ $ claude-gisx
 - **Extra usage** credits display (OAuth accounts)
 - **Vim mode**, **output style**, and **subagent** indicators when active
 - **Rotating third line** — keyboard tips, plus **what's new** parsed from Claude Code's own changelog cache (`~/.claude/cache/changelog.md`, feature entries only — fixes and links are skipped) and **usage nudges**: `weekly 65% used · /usage-credits raise your weekly limit` past 50%, and a `this week 15.7M tokens · ▲18% vs last week` trend summed from `dailyModelTokens` in `~/.claude/stats-cache.json`. All local, no network. Warnings (auto-compact, rate limit) always win the line
+- **Update notice** — when a newer release exists, the third line says so in drifting rainbow color: `✦ claude-gisx v1.2.0 available · claude-gisx update`. GitHub is checked at most once every 6 hours (cached in the temp dir, 1.5s timeout, silent on failure). Dev builds never nag; set `CLAUDE_GISX_NO_UPDATE_CHECK=1` to disable entirely
 - **Third-line plugin** — point `CLAUDE_GISX_PLUGIN` at any shell command (including `curl` against your own API) and its stdout becomes the third line. Timeout + caching are built in. See [Third-line plugin](#third-line-plugin)
 
 ## Manual setup
@@ -162,11 +164,13 @@ The bottom (tip) line is a plugin point. Wire it to any shell command — includ
 | `CLAUDE_GISX_PLUGIN` | _(unset)_ | Shell command or script path. When set, replaces the built-in idle tips. |
 | `CLAUDE_GISX_PLUGIN_TIMEOUT` | `2` | Seconds before the plugin is killed. Keep this low so the statusline stays responsive. |
 | `CLAUDE_GISX_PLUGIN_CACHE` | `30` | Seconds to cache the plugin's last successful stdout. Prevents hammering your API. |
+| `CLAUDE_GISX_NO_UPDATE_CHECK` | _(unset)_ | Set to anything to skip the GitHub release check and its rainbow update notice. |
+| `CLAUDE_GISX_REPO` | `Justar96/claude-gisx` | Repo that `update` checks and downloads from. |
 
 - The plugin receives the **full session JSON on stdin** (same shape the statusline gets). Use `jq` to pull fields like `session_id`, `model.id`, `cost.total_cost_usd`.
 - First line of stdout becomes the third line (truncated to 500 chars). ANSI escapes (`\033[...`) are honored.
 - On timeout / empty stdout the last cached output is reused. If there's no cache, the built-in tip line shows.
-- Warnings always win — `⚠ compact` and `rate limit high` override the plugin.
+- Warnings always win — `⚠ compact` and `rate limit high` override the plugin. The plugin in turn outranks the update notice and the tip rotation.
 
 ### Connect to your own API
 

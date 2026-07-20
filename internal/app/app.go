@@ -32,6 +32,8 @@ func Run(args []string) int {
 				force:   flags["force"],
 				noCheck: flags["no-check"],
 			})
+		case "update":
+			return updateCmd(installOpts{force: flags["force"]}, flags["check"])
 		case "uninstall":
 			return uninstallCmd(installOpts{force: flags["force"]})
 		case "status":

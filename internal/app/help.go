@@ -28,6 +28,7 @@ func helpScreen() {
 	fmt.Printf("  %sGet started%s\n", bold, reset)
 	bullet("claude-gisx setup     ", "wire into ~/.claude/settings.json (backs up any existing statusLine)")
 	bullet("claude-gisx status    ", "show current install state and backup")
+	bullet("claude-gisx update    ", "download and install the latest release (--check to only look)")
 	bullet("claude-gisx uninstall ", "restore your previous statusLine")
 	bullet("claude-gisx help      ", "this screen")
 	fmt.Println()
@@ -46,6 +47,7 @@ func helpScreen() {
 	bullet("CLAUDE_CODE_AUTO_COMPACT_WINDOW", "shrink the effective compaction window; badge remaps onto used %")
 	bullet("DISABLE_COMPACT                ", "disables auto-compact; statusline shows a dim compact:off badge")
 	bullet("CLAUDE_GISX_PLUGIN             ", "shell command whose stdout replaces the 3rd line (your own API, etc.)")
+	bullet("CLAUDE_GISX_NO_UPDATE_CHECK    ", "don't check GitHub for new releases (no rainbow update notice)")
 	fmt.Println()
 
 	fmt.Printf("  %sHow it runs%s\n", bold, reset)
