@@ -29,11 +29,40 @@ type installOpts struct {
 	noCheck bool
 }
 
+// The mark is drawn from the same heavy box-drawing family as the statusline's
+// context bar, so the installer and the thing it installs read as one tool.
+// Version, tagline and install state sit alongside it rather than below, which
+// keeps every screen's header to three lines.
 func banner() {
+	mark := [3]string{
+		"┏━╸╻┏━┓╻ ╻",
+		"┃╺┓┃┗━┓┏╋┛",
+		"┗━┛╹┗━┛╹ ╹",
+	}
+	state, _ := detectInstallState()
+	meta := [3]string{
+		bold + white + "claude-gisx" + reset + " " + dim + "v" + strings.TrimPrefix(Version, "v") + reset,
+		dimGray + "statusline for Claude Code" + reset,
+		stateBadge(state),
+	}
 	fmt.Println()
-	fmt.Printf("  %s%sclaude-gisx%s\n", bold, blue, reset)
-	fmt.Printf("  %srich statusline for Claude Code%s\n", dimGray, reset)
+	for i := range mark {
+		fmt.Printf("  %s%s%s   %s\n", bold+blue, mark[i], reset, meta[i])
+	}
 	fmt.Println()
+}
+
+// The offending command is left out here — status and setup both print it in
+// full, and the banner only needs to say which of the three states you're in.
+func stateBadge(state string) string {
+	switch state {
+	case "active":
+		return green + "●" + reset + " active"
+	case "other":
+		return yellow + "●" + reset + " another statusLine is active"
+	default:
+		return dimGray + "○" + reset + " not installed"
+	}
 }
 
 func preview() {
@@ -221,30 +250,33 @@ func statusCmd() int {
 	s := readSettings()
 	prev := loadPrev()
 	banner()
+	row := func(label, value string) {
+		fmt.Printf("  %s%-8s%s  %s\n", dimGray, label, reset, value)
+	}
 	switch {
 	case len(s) == 0:
-		fmt.Printf("  config   %smissing%s\n", dim, reset)
+		row("config", dim+"missing"+reset)
 	case isOurs(s):
 		sl, _ := s["statusLine"].(map[string]any)
 		cmd, _ := sl["command"].(string)
-		fmt.Printf("  config   %s active  %s%s%s\n", okMark, dim, cmd, reset)
+		row("config", okMark+" active  "+dim+cmd+reset)
 	default:
 		if sl, ok := s["statusLine"]; ok {
-			fmt.Printf("  config   %sother%s  %s%s%s\n", yellow, reset, dim, jsonStr(sl), reset)
+			row("config", yellow+"other"+reset+"  "+dim+jsonStr(sl)+reset)
 		} else {
-			fmt.Printf("  config   %snone%s\n", dim, reset)
+			row("config", dim+"none"+reset)
 		}
 	}
 	switch {
 	case prev.Found && prev.Had:
-		fmt.Printf("  backup   %s %s%s%s\n", okMark, dim, jsonStr(prev.Value), reset)
+		row("backup", okMark+" "+dim+jsonStr(prev.Value)+reset)
 	case prev.Found:
-		fmt.Printf("  backup   %s(default)%s\n", dim, reset)
+		row("backup", dim+"(default)"+reset)
 	default:
-		fmt.Printf("  backup   %snone%s\n", dim, reset)
+		row("backup", dim+"none"+reset)
 	}
 	if _, err := os.Stat(backupFullPath()); err == nil {
-		fmt.Printf("  snapshot %s%s%s\n", dim, backupFullPath(), reset)
+		row("snapshot", dim+backupFullPath()+reset)
 	}
 	fmt.Println()
 	return 0

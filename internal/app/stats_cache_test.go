@@ -45,7 +45,7 @@ func TestTokenTrendServesFromCache(t *testing.T) {
 		t.Fatal("a cache file should have been written")
 	}
 
-	// Swap the cached text, keeping the key: a second call must return the
+	// Swap the cached number, keeping the key: a second call must reflect the
 	// sentinel, proving it never re-parsed the stats file.
 	raw, err := os.ReadFile(trendCachePath())
 	if err != nil {
@@ -55,7 +55,7 @@ func TestTokenTrendServesFromCache(t *testing.T) {
 	if err := json.Unmarshal(raw, &c); err != nil {
 		t.Fatal(err)
 	}
-	c.Rendered = "SENTINEL"
+	c.Tokens = 12_345
 	raw, err = json.Marshal(c)
 	if err != nil {
 		t.Fatal(err)
@@ -63,7 +63,7 @@ func TestTokenTrendServesFromCache(t *testing.T) {
 	if err := os.WriteFile(trendCachePath(), raw, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if got := tokenTrend(); got != "SENTINEL" {
+	if got := stripANSI(tokenTrend()); !strings.Contains(got, "12.3k") {
 		t.Errorf("expected the cached value, got %q", got)
 	}
 }
@@ -95,13 +95,13 @@ func TestTokenTrendKeyCoversSourceAndDate(t *testing.T) {
 	}
 
 	// A rewritten stats file invalidates the entry rather than being ignored.
-	c.Rendered = "STALE"
+	c.Tokens = 12_345
 	c.Stamp = "different-key"
 	raw, _ = json.Marshal(c)
 	if err := os.WriteFile(trendCachePath(), raw, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if got := tokenTrend(); got == "STALE" {
+	if got := stripANSI(tokenTrend()); strings.Contains(got, "12.3k") {
 		t.Error("a mismatched key must force a recompute")
 	}
 }
@@ -113,5 +113,22 @@ func TestTokenTrendNoStatsFile(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(lineCacheDir(), "statusline-trend.json")); err == nil {
 		t.Error("nothing to cache when there's no source file")
+	}
+}
+
+// The cache holds numbers, not painted text: storing rendered ANSI meant a
+// NO_COLOR run replayed escapes written by an earlier colored one.
+func TestTrendCacheStoresNoEscapes(t *testing.T) {
+	isolateHome(t)
+	writeStatsFixture(t)
+	if tokenTrend() == "" {
+		t.Fatal("fixture should produce a trend")
+	}
+	raw, err := os.ReadFile(trendCachePath())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.ContainsRune(string(raw), 0x1b) {
+		t.Errorf("cache must not contain ANSI escapes: %s", raw)
 	}
 }

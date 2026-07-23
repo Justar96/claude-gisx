@@ -27,6 +27,23 @@ func rgb(r, g, b int) string {
 	return fmt.Sprintf("\x1b[38;2;%d;%d;%dm", r, g, b)
 }
 
+// disableColor blanks every escape so output is plain text.
+//
+// Deliberately not driven by a bare isatty check: Claude Code runs this binary
+// with stdout on a pipe and renders the escapes itself, so testing the
+// terminal on the statusline path would strip the color from the one place it
+// matters most. Only the subcommands consult the terminal — see Run. NO_COLOR
+// is honoured everywhere, because that one is the user asking.
+func disableColor() {
+	reset, bold, dim = "", "", ""
+	red, green, yellow, orange = "", "", "", ""
+	cyan, blue, magenta, white, dimGray = "", "", "", "", ""
+	// Both of these were composed from the vars above at init, so they hold
+	// stale escapes until rebuilt by hand.
+	sep = " · "
+	okMark, failMark, dotMark = "✓", "✗", "·"
+}
+
 func pctColor(p int) string {
 	switch {
 	case p >= 90:

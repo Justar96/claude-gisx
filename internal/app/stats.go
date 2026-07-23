@@ -20,9 +20,13 @@ type statsCache struct {
 	} `json:"dailyModelTokens"`
 }
 
+// Holds the computed numbers, never the painted string: caching rendered ANSI
+// would replay whatever colors were in effect when it was written, so a later
+// NO_COLOR run would still emit escapes from the cache.
 type trendCache struct {
-	Stamp    string `json:"stamp"`
-	Rendered string `json:"rendered"`
+	Stamp  string `json:"stamp"`
+	Tokens int64  `json:"tokens"` // 0 means "nothing worth showing"
+	Delta  int    `json:"delta"`
 }
 
 func trendCachePath() string { return filepath.Join(lineCacheDir(), "statusline-trend.json") }
@@ -43,21 +47,22 @@ func tokenTrend() string {
 	if raw, err := os.ReadFile(trendCachePath()); err == nil {
 		var c trendCache
 		if json.Unmarshal(raw, &c) == nil && c.Stamp == stamp {
-			return c.Rendered
+			return paintTokenTrend(c.Tokens, c.Delta)
 		}
 	}
 
-	rendered := ""
+	var tokens int64
+	delta := 0
 	if raw, err := os.ReadFile(statsPath()); err == nil {
 		var s statsCache
 		if json.Unmarshal(raw, &s) == nil {
-			rendered = renderTokenTrend(s, now)
+			tokens, delta = computeTokenTrend(s, now)
 		}
 	}
-	if raw, err := json.Marshal(trendCache{Stamp: stamp, Rendered: rendered}); err == nil {
+	if raw, err := json.Marshal(trendCache{Stamp: stamp, Tokens: tokens, Delta: delta}); err == nil {
 		_ = writeFileAtomic(trendCachePath(), raw)
 	}
-	return rendered
+	return paintTokenTrend(tokens, delta)
 }
 
 const (
@@ -74,6 +79,26 @@ const (
 // the newest day it holds is the newest day we can speak to; calling it
 // "today" when the file lagged three days would be a lie.
 func renderTokenTrend(s statsCache, now time.Time) string {
+	return paintTokenTrend(computeTokenTrend(s, now))
+}
+
+// paintTokenTrend is kept apart from the arithmetic so the colors are chosen
+// at render time — see trendCache for why that matters.
+func paintTokenTrend(tokens int64, delta int) string {
+	if tokens == 0 {
+		return ""
+	}
+	arrow, col := "▲", green
+	if delta < 0 {
+		arrow, col, delta = "▼", dimGray, -delta
+	}
+	return dimGray + "tokens" + reset + " " + white + fmtTokens(tokens) + reset +
+		" " + col + fmt.Sprintf("%s%d%%", arrow, delta) + reset
+}
+
+// computeTokenTrend returns the reported day's tokens and its percentage
+// change, or (0, 0) when there isn't enough recent data to say anything true.
+func computeTokenTrend(s statsCache, now time.Time) (int64, int) {
 	days := make(map[string]int64, len(s.DailyModelTokens))
 	dates := make([]string, 0, len(s.DailyModelTokens))
 	for _, d := range s.DailyModelTokens {
@@ -88,47 +113,41 @@ func renderTokenTrend(s statsCache, now time.Time) string {
 		dates = append(dates, d.Date)
 	}
 	if len(dates) == 0 {
-		return ""
+		return 0, 0
 	}
 	sort.Strings(dates)
 	const layout = "2006-01-02"
 	newest, err := time.Parse(layout, dates[len(dates)-1])
 	if err != nil {
-		return ""
+		return 0, 0
 	}
 	oldest, err := time.Parse(layout, dates[0])
 	if err != nil {
-		return ""
+		return 0, 0
 	}
 	// A day with no usage is simply absent from the file, so a short history
 	// would read as a run of zero-token days and drag the average down.
 	// Require the window to be genuinely covered before averaging over it.
 	if oldest.After(newest.AddDate(0, 0, -trendWindow)) {
-		return ""
+		return 0, 0
 	}
 	if now.Sub(newest) > staleAfterDays*24*time.Hour {
-		return ""
+		return 0, 0
 	}
 
 	latest := days[newest.Format(layout)]
 	if latest == 0 {
-		return ""
+		return 0, 0
 	}
 	sum := int64(0)
 	for i := 1; i <= trendWindow; i++ {
 		sum += days[newest.AddDate(0, 0, -i).Format(layout)]
 	}
 	if sum == 0 {
-		return ""
+		return 0, 0
 	}
 	avg := sum / trendWindow
-	delta := (latest - avg) * 100 / avg
-	arrow, col := "▲", green
-	if delta < 0 {
-		arrow, col, delta = "▼", dimGray, -delta
-	}
-	return dimGray + "tokens" + reset + " " + white + fmtTokens(latest) + reset +
-		" " + col + fmt.Sprintf("%s%d%%", arrow, delta) + reset
+	return latest, int((latest - avg) * 100 / avg)
 }
 
 func fmtTokens(n int64) string {

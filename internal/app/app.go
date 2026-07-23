@@ -19,6 +19,14 @@ func Run(args []string) int {
 		cmd = pos[0]
 	}
 
+	// The statusline path is the no-args-with-piped-stdin case, and its stdout
+	// is always a pipe — Claude Code reads it back. Everything else is someone
+	// at a terminal, where redirected output should be plain text.
+	statusline := cmd == "" && !stdinIsTerminal()
+	if os.Getenv("NO_COLOR") != "" || (!statusline && !stdoutIsTerminal()) {
+		disableColor()
+	}
+
 	// A subcommand wins outright — never touch stdin (which can block when
 	// the caller hands us an inherited pipe, e.g. curl | bash).
 	if cmd != "" {
@@ -70,8 +78,12 @@ func parseFlags(args []string) (positional []string, flags map[string]bool) {
 	return
 }
 
-func stdinIsTerminal() bool {
-	st, err := os.Stdin.Stat()
+func stdinIsTerminal() bool { return isCharDevice(os.Stdin) }
+
+func stdoutIsTerminal() bool { return isCharDevice(os.Stdout) }
+
+func isCharDevice(f *os.File) bool {
+	st, err := f.Stat()
 	if err != nil {
 		return false
 	}

@@ -6,62 +6,45 @@ import (
 	"os"
 )
 
+// The manual-JSON block and the "how it runs" walkthrough used to live here.
+// Both are gone: setup writes that JSON for you, and anyone who wants the
+// long version has the repo. What's left is the two things you'd open this
+// screen to look up.
 func helpScreen() {
-	state, otherCmd := detectInstallState()
-	fmt.Println()
-	fmt.Printf("  %s%sclaude-gisx%s %sv%s%s\n", bold, blue, reset, dim, Version, reset)
-	fmt.Printf("  %srich, dynamic statusline for Claude Code%s\n\n", dimGray, reset)
-
-	switch {
-	case state == "active":
-		fmt.Printf("  %s%sinstalled%s %s— restart Claude Code if you just installed%s\n",
-			green, "✓ ", reset, dim, reset)
-	case state == "other":
-		fmt.Printf("  %s!%s another statusLine is active: %s%s%s\n", yellow, reset, dim, otherCmd, reset)
-		fmt.Printf("    %srun %s%sclaude-gisx setup%s %sto back it up and switch%s\n",
-			dim, reset, cyan, reset, dim, reset)
-	default:
-		fmt.Printf("  %s○%s not installed yet\n", dimGray, reset)
-	}
-	fmt.Println()
-
-	fmt.Printf("  %sGet started%s\n", bold, reset)
-	bullet("claude-gisx setup     ", "wire into ~/.claude/settings.json (backs up any existing statusLine)")
-	bullet("claude-gisx status    ", "show current install state and backup")
-	bullet("claude-gisx update    ", "download and install the latest release (--check to only look)")
-	bullet("claude-gisx uninstall ", "restore your previous statusLine")
-	bullet("claude-gisx help      ", "this screen")
-	fmt.Println()
-
-	fmt.Printf("  %sOr wire it manually%s\n", bold, reset)
-	fmt.Printf("  %sadd to ~/.claude/settings.json%s\n\n", dim, reset)
-	fmt.Printf("    %s{%s\n", dim, reset)
-	fmt.Printf("      %s\"statusLine\"%s: {\n", cyan, reset)
-	fmt.Printf("        %s\"type\"%s: %s\"command\"%s,\n", cyan, reset, green, reset)
-	fmt.Printf("        %s\"command\"%s: %s\"claude-gisx\"%s\n", cyan, reset, green, reset)
-	fmt.Printf("      }\n")
-	fmt.Printf("    %s}%s\n\n", dim, reset)
-
-	fmt.Printf("  %sConfigure%s %s(all optional, all env-vars)%s\n", bold, reset, dim, reset)
-	bullet("CLAUDE_AUTOCOMPACT_PCT_OVERRIDE", "Claude Code's compact %; statusline shows a red ⚠ when reached")
-	bullet("CLAUDE_CODE_AUTO_COMPACT_WINDOW", "shrink the effective compaction window; badge remaps onto used %")
-	bullet("DISABLE_COMPACT                ", "disables auto-compact; statusline shows a dim compact:off badge")
-	bullet("CLAUDE_GISX_PLUGIN             ", "shell command whose stdout replaces the 3rd line (your own API, etc.)")
-	bullet("CLAUDE_GISX_NO_UPDATE_CHECK    ", "don't check GitHub for new releases (no update notice)")
-	fmt.Println()
-
-	fmt.Printf("  %sHow it runs%s\n", bold, reset)
-	fmt.Printf("  %sClaude Code pipes a JSON session blob to %s%sclaude-gisx%s%s on stdin.%s\n",
-		dim, reset, cyan, reset, dim, reset)
-	fmt.Printf("  %sYou can preview the output by piping JSON manually:%s\n\n", dim, reset)
-	fmt.Printf("    %secho%s %s'{\"model\":{\"display_name\":\"Opus\"},\"context_window\":{\"used_percentage\":12}}'%s %s| %s%sclaude-gisx%s\n\n",
-		cyan, reset, green, reset, dim, reset, cyan, reset)
-
-	fmt.Printf("  %sdocs: %s%shttps://github.com/Justar96/claude-gisx%s\n\n", dim, reset, cyan, reset)
+	banner()
+	section("COMMANDS", []helpItem{
+		{"setup", "wire into ~/.claude/settings.json (backs up any existing statusLine)"},
+		{"status", "show install state and backup"},
+		{"update", "download the latest release (--check to only look)"},
+		{"uninstall", "restore your previous statusLine"},
+		{"help", "this screen"},
+	})
+	section("ENV", []helpItem{
+		{"CLAUDE_AUTOCOMPACT_PCT_OVERRIDE", "Claude Code's compact %; statusline shows a red ⚠ when reached"},
+		{"CLAUDE_CODE_AUTO_COMPACT_WINDOW", "shrink the effective compaction window"},
+		{"DISABLE_COMPACT", "disables auto-compact; statusline shows a dim compact:off badge"},
+		{"CLAUDE_GISX_PLUGIN", "shell command whose stdout replaces line 3"},
+		{"CLAUDE_GISX_NO_UPDATE_CHECK", "don't check GitHub for new releases"},
+	})
+	fmt.Printf("  %sgithub.com/Justar96/claude-gisx%s\n\n", cyan, reset)
 }
 
-func bullet(label, body string) {
-	fmt.Printf("  %s•%s %s%s%s  %s%s%s\n", dimGray, reset, white, label, reset, dim, body, reset)
+type helpItem struct{ name, desc string }
+
+// Column width comes from the entries themselves — the old version padded the
+// labels by hand inside the strings, which drifted every time one was edited.
+func section(title string, items []helpItem) {
+	fmt.Printf("  %s%s%s\n", bold, title, reset)
+	w := 0
+	for _, it := range items {
+		if len(it.name) > w {
+			w = len(it.name)
+		}
+	}
+	for _, it := range items {
+		fmt.Printf("    %s%-*s%s  %s%s%s\n", white, w, it.name, reset, dim, it.desc, reset)
+	}
+	fmt.Println()
 }
 
 func detectInstallState() (state, otherCmd string) {
