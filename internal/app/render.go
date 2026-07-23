@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 )
 
 type sessionInput struct {
@@ -77,6 +78,10 @@ func renderStatusline(stdinJSON string) {
 		return
 	}
 
+	// Runs here rather than off cacheDir(): a dev build with no plugin
+	// configured never reaches that path, and the strays would linger.
+	cleanLegacyCache()
+
 	modelName := "Claude"
 	if data.Model != nil && data.Model.DisplayName != "" {
 		modelName = data.Model.DisplayName
@@ -124,7 +129,7 @@ func renderStatusline(stdinJSON string) {
 	var L strings.Builder
 	L.WriteString(bold + blue + modelName + reset)
 	if effortLevel != "" {
-		L.WriteString(dim + "/" + reset + effortColor(effortLevel) + effortLevel + reset)
+		L.WriteString(" " + dimGray + "effort" + reset + " " + effortColor(effortLevel) + effortLevel + reset)
 	}
 	if data.FastMode {
 		// A word, not an emoji — emoji widths vary per terminal and shift the line.
@@ -186,26 +191,24 @@ func renderStatusline(stdinJSON string) {
 	fivePct := 0
 	weekPct := 0
 	limitPct := 0
-	if data.RateLimits != nil {
-		if data.RateLimits.FiveHour != nil {
-			fivePct = int(data.RateLimits.FiveHour.UsedPercentage)
+
+	// A reopened session gets no rate_limits until its first API response —
+	// fall back to the last-known buckets so the line isn't blank until then,
+	// dimmed to admit the numbers aren't live.
+	rl, stale := data.RateLimits, false
+	if hasBuckets(rl) {
+		saveLimits(rl)
+	} else if cached := loadLimits(time.Now()); cached != nil {
+		rl, stale = cached, true
+	}
+	if hasBuckets(rl) {
+		if rl.FiveHour != nil {
+			fivePct = int(rl.FiveHour.UsedPercentage)
+			writeBucket(&R, "5h", fivePct, rl.FiveHour.ResetsAt, stale)
 		}
-		if data.RateLimits.SevenDay != nil {
-			weekPct = int(data.RateLimits.SevenDay.UsedPercentage)
-		}
-		fiveRem := 100 - fivePct
-		weekRem := 100 - weekPct
-		R.WriteString(white + "5h" + reset + " " + pctColor(fivePct) + fmt.Sprintf("%d%%", fivePct) + reset)
-		if data.RateLimits.FiveHour != nil {
-			if s := fmtRemaining(data.RateLimits.FiveHour.ResetsAt); s != "" {
-				R.WriteString(" " + dimGray + "resets" + reset + " " + remainingColor(fiveRem) + s + reset)
-			}
-		}
-		R.WriteString(sep + white + "7d" + reset + " " + pctColor(weekPct) + fmt.Sprintf("%d%%", weekPct) + reset)
-		if data.RateLimits.SevenDay != nil {
-			if s := fmtRemaining(data.RateLimits.SevenDay.ResetsAt); s != "" {
-				R.WriteString(" " + dimGray + "resets" + reset + " " + remainingColor(weekRem) + s + reset)
-			}
+		if rl.SevenDay != nil {
+			weekPct = int(rl.SevenDay.UsedPercentage)
+			writeBucket(&R, "7d", weekPct, rl.SevenDay.ResetsAt, stale)
 		}
 	}
 	limitPct = maxi(fivePct, weekPct)
@@ -214,13 +217,7 @@ func renderStatusline(stdinJSON string) {
 	// usage endpoint — the statusline payload only carries 5h/7d.
 	if u := fetchUsage(context.Background()); u != nil {
 		for _, s := range u.Scoped {
-			if R.Len() > 0 {
-				R.WriteString(sep)
-			}
-			R.WriteString(white + s.Name + reset + " " + pctColor(s.Pct) + fmt.Sprintf("%d%%", s.Pct) + reset)
-			if t := fmtRemaining(s.ResetsAt); t != "" {
-				R.WriteString(" " + dimGray + "resets" + reset + " " + remainingColor(100-s.Pct) + t + reset)
-			}
+			writeBucket(&R, s.Name, s.Pct, s.ResetsAt, false)
 			limitPct = maxi(limitPct, s.Pct)
 		}
 		if u.Extra != nil {
@@ -255,5 +252,23 @@ func renderStatusline(stdinJSON string) {
 	}
 	if T != "" {
 		_, _ = io.WriteString(w, T+"\n")
+	}
+}
+
+// writeBucket renders one quota segment — "5h 12% resets 2h 30m" — for the
+// payload's 5h/7d buckets and the per-model quotas alike. A stale segment is
+// last-known state restored across a restart, so it's drawn flat gray rather
+// than in the severity colors that imply a live reading.
+func writeBucket(b *strings.Builder, name string, pct int, resetsAt int64, stale bool) {
+	label, value, left := white, pctColor(pct), remainingColor(100-pct)
+	if stale {
+		label, value, left = dimGray, dimGray, dimGray
+	}
+	if b.Len() > 0 {
+		b.WriteString(sep)
+	}
+	b.WriteString(label + name + reset + " " + value + fmt.Sprintf("%d%%", pct) + reset)
+	if t := fmtRemaining(resetsAt); t != "" {
+		b.WriteString(" " + dimGray + "resets" + reset + " " + left + t + reset)
 	}
 }

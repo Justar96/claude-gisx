@@ -109,21 +109,30 @@ func availableUpdate(maxAge time.Duration) string {
 		return ""
 	}
 	tag := ""
+	checked := false
 	if raw, err := os.ReadFile(updateCachePath()); err == nil {
 		var c updateCache
 		if json.Unmarshal(raw, &c) == nil {
 			if time.Since(time.Unix(c.CheckedAt, 0)) < maxAge {
-				tag = c.Tag
+				tag, checked = c.Tag, true
 			}
 		}
 	}
-	if tag == "" {
+	// Keyed on "did we check recently", not "do we have a tag" — an offline
+	// machine has no tag to show and would otherwise re-dial GitHub on every
+	// single render, paying the full timeout each time. Recording the failed
+	// attempt makes the next renders fall straight through.
+	if !checked {
 		fetched, err := latestTag(context.Background(), 1500*time.Millisecond)
 		if err != nil {
+			writeUpdateCache("")
 			return ""
 		}
 		writeUpdateCache(fetched)
 		tag = fetched
+	}
+	if tag == "" {
+		return ""
 	}
 	if newerThan(tag, Version) {
 		return tag
@@ -136,8 +145,7 @@ func writeUpdateCache(tag string) {
 	if err != nil {
 		return
 	}
-	_ = os.MkdirAll(filepath.Dir(updateCachePath()), 0o755)
-	_ = os.WriteFile(updateCachePath(), raw, 0o644)
+	_ = writeFileAtomic(updateCachePath(), raw)
 }
 
 // ── the update command ────────────────────────────────────────────────────

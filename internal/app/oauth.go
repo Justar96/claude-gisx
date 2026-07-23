@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sync"
 	"time"
 )
 
@@ -48,10 +49,22 @@ type oauthBody struct {
 	} `json:"limits,omitempty"`
 }
 
+const (
+	usageFresh = 60 * time.Second
+	// How long a failed fetch suppresses the next one. Without this, an
+	// offline machine or a rotated token costs *every* render the full 3s
+	// HTTP timeout — the statusline hangs on each redraw instead of falling
+	// straight through to the cached numbers.
+	usageBackoff = 5 * time.Minute
+)
+
+func usageCachePath() string { return filepath.Join(lineCacheDir(), "statusline-usage.json") }
+func usageFailPath() string  { return filepath.Join(lineCacheDir(), "statusline-usage.fail") }
+
 func fetchUsage(ctx context.Context) *usage {
-	cachePath := filepath.Join(cacheDir(), "statusline-extra-cache.json")
-	body := readCachedOAuth(cachePath, 60*time.Second)
-	if body == nil {
+	cachePath := usageCachePath()
+	body := readCachedOAuth(cachePath, usageFresh)
+	if body == nil && !fetchBackedOff() {
 		body = doOAuthFetch(ctx, cachePath)
 	}
 	if body == nil {
@@ -118,7 +131,24 @@ func readCachedOAuth(p string, maxAge time.Duration) *oauthBody {
 	return &b
 }
 
+func fetchBackedOff() bool {
+	st, err := os.Stat(usageFailPath())
+	return err == nil && time.Since(st.ModTime()) < usageBackoff
+}
+
+// doOAuthFetch records whether the endpoint answered, so a run of failures
+// backs off instead of re-timing-out on every render.
 func doOAuthFetch(ctx context.Context, cachePath string) *oauthBody {
+	b := oauthFetch(ctx, cachePath)
+	if b == nil {
+		_ = writeFileAtomic(usageFailPath(), nil)
+	} else {
+		_ = os.Remove(usageFailPath())
+	}
+	return b
+}
+
+func oauthFetch(ctx context.Context, cachePath string) *oauthBody {
 	token := getOAuthToken()
 	if token == "" {
 		return nil
@@ -148,8 +178,7 @@ func doOAuthFetch(ctx context.Context, cachePath string) *oauthBody {
 	if err := json.Unmarshal(raw, &b); err != nil {
 		return nil
 	}
-	_ = os.MkdirAll(filepath.Dir(cachePath), 0o755)
-	_ = os.WriteFile(cachePath, raw, 0o644)
+	_ = writeFileAtomic(cachePath, raw)
 	return &b
 }
 
@@ -189,6 +218,37 @@ func getOAuthToken() string {
 	return ""
 }
 
+// Genuinely ephemeral caches (plugin output, update checks) still belong in
+// temp — but not in a shared, predictable path. On a multi-user box /tmp/claude
+// is owned by whoever creates it first, so everyone after that either fails to
+// write or reads someone else's output. Scope it to the uid and keep it 0700.
+// Windows already hands each user a private temp dir, so there's nothing to
+// scope there (Getuid reports -1).
 func cacheDir() string {
-	return filepath.Join(os.TempDir(), "claude")
+	name := "claude-gisx"
+	if uid := os.Getuid(); uid >= 0 {
+		name = fmt.Sprintf("claude-gisx-%d", uid)
+	}
+	return filepath.Join(os.TempDir(), name)
+}
+
+// The old shared location. Remove only the files we put there — that directory
+// name is generic enough that it may not be ours alone, and the final Remove
+// deletes it only if it's empty, i.e. only if everything in it was ours.
+var legacyOnce sync.Once
+
+func cleanLegacyCache() {
+	legacyOnce.Do(func() { removeLegacyCache(os.TempDir()) })
+}
+
+func removeLegacyCache(tempRoot string) {
+	old := filepath.Join(tempRoot, "claude")
+	for _, n := range []string{
+		"statusline-extra-cache.json",
+		"statusline-plugin-cache.txt",
+		"gisx-update-cache.json",
+	} {
+		_ = os.Remove(filepath.Join(old, n))
+	}
+	_ = os.Remove(old)
 }

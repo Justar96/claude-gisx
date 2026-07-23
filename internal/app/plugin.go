@@ -45,8 +45,7 @@ func runPlugin(stdinJSON string) string {
 		first = first[:500]
 	}
 	if first != "" {
-		_ = os.MkdirAll(filepath.Dir(cachePath), 0o755)
-		_ = os.WriteFile(cachePath, []byte(first), 0o644)
+		_ = writeFileAtomic(cachePath, []byte(first))
 		return first
 	}
 	if raw, err := os.ReadFile(cachePath); err == nil {

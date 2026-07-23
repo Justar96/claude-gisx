@@ -23,16 +23,44 @@ type statsCache struct {
 // weeklyTrend renders a compact "4.2M ▲18%" for the usage line — this week's
 // tokens and the change against the previous week. Empty when there isn't
 // enough recent data to say anything true.
+type trendCache struct {
+	Stamp    string `json:"stamp"`
+	Rendered string `json:"rendered"`
+}
+
+func trendCachePath() string { return filepath.Join(lineCacheDir(), "statusline-trend.json") }
+
+// The trend is derived from a file Claude Code rewrites at most once a day,
+// but it was re-parsing ~30KB of JSON on every render. Memoize it against the
+// source's mtime and size so the steady-state cost is a stat plus a tiny read.
+// The current date is part of the key too: the result also depends on how old
+// the newest sample is, so a cache keyed on the file alone would keep showing
+// a trend that should have aged out.
 func weeklyTrend() string {
-	raw, err := os.ReadFile(statsPath())
+	st, err := os.Stat(statsPath())
 	if err != nil {
 		return ""
 	}
-	var s statsCache
-	if err := json.Unmarshal(raw, &s); err != nil {
-		return ""
+	now := time.Now()
+	stamp := fmt.Sprintf("%d/%d/%s", st.ModTime().UnixNano(), st.Size(), now.Format("2006-01-02"))
+	if raw, err := os.ReadFile(trendCachePath()); err == nil {
+		var c trendCache
+		if json.Unmarshal(raw, &c) == nil && c.Stamp == stamp {
+			return c.Rendered
+		}
 	}
-	return renderWeeklyTrend(s, time.Now())
+
+	rendered := ""
+	if raw, err := os.ReadFile(statsPath()); err == nil {
+		var s statsCache
+		if json.Unmarshal(raw, &s) == nil {
+			rendered = renderWeeklyTrend(s, now)
+		}
+	}
+	if raw, err := json.Marshal(trendCache{Stamp: stamp, Rendered: rendered}); err == nil {
+		_ = writeFileAtomic(trendCachePath(), raw)
+	}
+	return rendered
 }
 
 const staleAfterDays = 10
