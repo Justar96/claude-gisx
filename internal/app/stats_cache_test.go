@@ -10,7 +10,7 @@ import (
 	"time"
 )
 
-// Two weeks of samples, enough for renderWeeklyTrend to have something to say.
+// Two weeks of samples, enough for renderTokenTrend to have something to say.
 func writeStatsFixture(t *testing.T) {
 	t.Helper()
 	var s statsCache
@@ -33,11 +33,11 @@ func writeStatsFixture(t *testing.T) {
 	}
 }
 
-func TestWeeklyTrendServesFromCache(t *testing.T) {
+func TestTokenTrendServesFromCache(t *testing.T) {
 	isolateHome(t)
 	writeStatsFixture(t)
 
-	first := weeklyTrend()
+	first := tokenTrend()
 	if first == "" {
 		t.Fatal("fixture should produce a trend")
 	}
@@ -63,15 +63,15 @@ func TestWeeklyTrendServesFromCache(t *testing.T) {
 	if err := os.WriteFile(trendCachePath(), raw, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if got := weeklyTrend(); got != "SENTINEL" {
+	if got := tokenTrend(); got != "SENTINEL" {
 		t.Errorf("expected the cached value, got %q", got)
 	}
 }
 
-func TestWeeklyTrendKeyCoversSourceAndDate(t *testing.T) {
+func TestTokenTrendKeyCoversSourceAndDate(t *testing.T) {
 	isolateHome(t)
 	writeStatsFixture(t)
-	weeklyTrend()
+	tokenTrend()
 
 	raw, err := os.ReadFile(trendCachePath())
 	if err != nil {
@@ -101,14 +101,14 @@ func TestWeeklyTrendKeyCoversSourceAndDate(t *testing.T) {
 	if err := os.WriteFile(trendCachePath(), raw, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if got := weeklyTrend(); got == "STALE" {
+	if got := tokenTrend(); got == "STALE" {
 		t.Error("a mismatched key must force a recompute")
 	}
 }
 
-func TestWeeklyTrendNoStatsFile(t *testing.T) {
+func TestTokenTrendNoStatsFile(t *testing.T) {
 	isolateHome(t)
-	if got := weeklyTrend(); got != "" {
+	if got := tokenTrend(); got != "" {
 		t.Errorf("missing stats file should yield empty, got %q", got)
 	}
 	if _, err := os.Stat(filepath.Join(lineCacheDir(), "statusline-trend.json")); err == nil {

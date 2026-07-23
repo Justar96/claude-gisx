@@ -147,6 +147,12 @@ func renderStatusline(stdinJSON string) {
 	if has1M && data.Exceeds200k {
 		L.WriteString(" " + dimGray + "+ext" + reset)
 	}
+	// Sits with the context bar rather than on the usage line: both are
+	// "how much am I burning", and line 2 only renders when there are quotas
+	// to report, which a fresh session doesn't have yet.
+	if trend := tokenTrend(); trend != "" {
+		L.WriteString(sep + trend)
+	}
 
 	L.WriteString(sep + cyan + dir + reset)
 	if g.branch != "" {
@@ -227,12 +233,6 @@ func renderStatusline(stdinJSON string) {
 			R.WriteString(dimGray + "extra" + reset + " " + white + "$" + u.Extra.Used +
 				dimGray + "/" + reset + white + "$" + u.Extra.Limit + reset)
 		}
-	}
-	if trend := weeklyTrend(); trend != "" {
-		if R.Len() > 0 {
-			R.WriteString(sep)
-		}
-		R.WriteString(trend)
 	}
 
 	// ── Line 3: plugin output or built-in tip ─────────────────────────────

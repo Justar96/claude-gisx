@@ -20,9 +20,6 @@ type statsCache struct {
 	} `json:"dailyModelTokens"`
 }
 
-// weeklyTrend renders a compact "4.2M ▲18%" for the usage line — this week's
-// tokens and the change against the previous week. Empty when there isn't
-// enough recent data to say anything true.
 type trendCache struct {
 	Stamp    string `json:"stamp"`
 	Rendered string `json:"rendered"`
@@ -36,7 +33,7 @@ func trendCachePath() string { return filepath.Join(lineCacheDir(), "statusline-
 // The current date is part of the key too: the result also depends on how old
 // the newest sample is, so a cache keyed on the file alone would keep showing
 // a trend that should have aged out.
-func weeklyTrend() string {
+func tokenTrend() string {
 	st, err := os.Stat(statsPath())
 	if err != nil {
 		return ""
@@ -54,7 +51,7 @@ func weeklyTrend() string {
 	if raw, err := os.ReadFile(statsPath()); err == nil {
 		var s statsCache
 		if json.Unmarshal(raw, &s) == nil {
-			rendered = renderWeeklyTrend(s, now)
+			rendered = renderTokenTrend(s, now)
 		}
 	}
 	if raw, err := json.Marshal(trendCache{Stamp: stamp, Rendered: rendered}); err == nil {
@@ -63,9 +60,20 @@ func weeklyTrend() string {
 	return rendered
 }
 
-const staleAfterDays = 10
+const (
+	staleAfterDays = 10
+	trendWindow    = 7 // days of history the daily average is drawn from
+)
 
-func renderWeeklyTrend(s statsCache, now time.Time) string {
+// renderTokenTrend reports the latest day on record against the daily average
+// of the week before it — "tokens 924.2k ▼68%" — so it moves the day you burn
+// more, instead of waiting a week for a week-over-week figure to budge.
+//
+// Everything is measured relative to the file's own newest date rather than
+// the wall clock. Claude Code only rewrites this file when you open /usage, so
+// the newest day it holds is the newest day we can speak to; calling it
+// "today" when the file lagged three days would be a lie.
+func renderTokenTrend(s statsCache, now time.Time) string {
 	days := make(map[string]int64, len(s.DailyModelTokens))
 	dates := make([]string, 0, len(s.DailyModelTokens))
 	for _, d := range s.DailyModelTokens {
@@ -79,31 +87,48 @@ func renderWeeklyTrend(s statsCache, now time.Time) string {
 		days[d.Date] = total
 		dates = append(dates, d.Date)
 	}
-	if len(dates) < 14 {
+	if len(dates) == 0 {
 		return ""
 	}
 	sort.Strings(dates)
-	newest, err := time.Parse("2006-01-02", dates[len(dates)-1])
+	const layout = "2006-01-02"
+	newest, err := time.Parse(layout, dates[len(dates)-1])
 	if err != nil {
+		return ""
+	}
+	oldest, err := time.Parse(layout, dates[0])
+	if err != nil {
+		return ""
+	}
+	// A day with no usage is simply absent from the file, so a short history
+	// would read as a run of zero-token days and drag the average down.
+	// Require the window to be genuinely covered before averaging over it.
+	if oldest.After(newest.AddDate(0, 0, -trendWindow)) {
 		return ""
 	}
 	if now.Sub(newest) > staleAfterDays*24*time.Hour {
 		return ""
 	}
-	this, prev := int64(0), int64(0)
-	for i := 0; i < 7; i++ {
-		this += days[newest.AddDate(0, 0, -i).Format("2006-01-02")]
-		prev += days[newest.AddDate(0, 0, -i-7).Format("2006-01-02")]
-	}
-	if this == 0 || prev == 0 {
+
+	latest := days[newest.Format(layout)]
+	if latest == 0 {
 		return ""
 	}
-	delta := (this - prev) * 100 / prev
+	sum := int64(0)
+	for i := 1; i <= trendWindow; i++ {
+		sum += days[newest.AddDate(0, 0, -i).Format(layout)]
+	}
+	if sum == 0 {
+		return ""
+	}
+	avg := sum / trendWindow
+	delta := (latest - avg) * 100 / avg
 	arrow, col := "▲", green
 	if delta < 0 {
 		arrow, col, delta = "▼", dimGray, -delta
 	}
-	return white + fmtTokens(this) + reset + " " + col + fmt.Sprintf("%s%d%%", arrow, delta) + reset
+	return dimGray + "tokens" + reset + " " + white + fmtTokens(latest) + reset +
+		" " + col + fmt.Sprintf("%s%d%%", arrow, delta) + reset
 }
 
 func fmtTokens(n int64) string {
