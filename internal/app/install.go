@@ -41,7 +41,7 @@ func banner() {
 	}
 	state, _ := detectInstallState()
 	meta := [3]string{
-		bold + white + "claude-gisx" + reset + " " + dim + "v" + strings.TrimPrefix(Version, "v") + reset,
+		bold + white + "claude-gisx" + reset + " " + dim + verLabel(Version) + reset,
 		dimGray + "statusline for Claude Code" + reset,
 		stateBadge(state),
 	}
@@ -51,6 +51,11 @@ func banner() {
 	}
 	fmt.Println()
 }
+
+// Release tags carry a "v" but the linker-injected version sometimes doesn't,
+// so every version on screen goes through here rather than being printed raw —
+// otherwise a line reads "1.3.0 → v1.3.1".
+func verLabel(v string) string { return "v" + strings.TrimPrefix(v, "v") }
 
 // The offending command is left out here — status and setup both print it in
 // full, and the banner only needs to say which of the three states you're in.

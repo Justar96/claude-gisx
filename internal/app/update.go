@@ -178,8 +178,7 @@ func assetName() (string, error) {
 }
 
 func updateCmd(opts installOpts, checkOnly bool) int {
-	fmt.Println()
-	fmt.Printf("  %s%sclaude-gisx%s %supdate%s\n\n", bold, blue, reset, dim, reset)
+	banner()
 
 	tag, err := latestTag(context.Background(), 10*time.Second)
 	if err != nil {
@@ -187,20 +186,24 @@ func updateCmd(opts installOpts, checkOnly bool) int {
 		return 3
 	}
 	writeUpdateCache(tag)
-	fmt.Printf("  installed  %s%s%s\n", bold, Version, reset)
-	fmt.Printf("  latest     %s%s%s\n\n", bold, tag, reset)
 
 	upToDate := !newerThan(tag, Version)
+	if upToDate {
+		fmt.Printf("  %s%s%s  %s up to date\n\n", bold, verLabel(Version), reset, okMark)
+	} else {
+		// One line carrying the whole point of the command: what you have,
+		// and what you're about to have.
+		fmt.Printf("  %s%s%s %s→%s %s%s%s\n\n", dim, verLabel(Version), reset, dimGray, reset, bold+green, verLabel(tag), reset)
+	}
+
 	if checkOnly {
-		if upToDate {
-			fmt.Printf("  %s up to date\n\n", okMark)
-		} else {
-			fmt.Printf("  %s%s available%s — run %sclaude-gisx update%s\n\n", green, tag, reset, cyan, reset)
+		if !upToDate {
+			fmt.Printf("  run %sclaude-gisx update%s\n\n", cyan, reset)
 		}
 		return 0
 	}
 	if upToDate && !opts.force {
-		fmt.Printf("  %s already up to date %s(--force to reinstall)%s\n\n", okMark, dim, reset)
+		fmt.Printf("  %s--force to reinstall%s\n\n", dim, reset)
 		return 0
 	}
 
@@ -215,26 +218,42 @@ func updateCmd(opts installOpts, checkOnly bool) int {
 		return 1
 	}
 
-	fmt.Printf("  %sdownloading%s %s\n", dim, reset, asset)
+	// Each stage leaves one settled line behind it. The bar draws on the line
+	// below and is wiped once the bytes are in, so the finished screen reads
+	// as a clean checklist rather than a scroll of transient output.
+	if !stdoutIsTerminal() {
+		fmt.Printf("  %sdownloading%s %s\n", dim, reset, asset)
+	}
 	bin, err := downloadAsset(tag, asset)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "  %s download failed: %v\n\n", failMark, err)
 		return 3
 	}
+	step(okMark, "downloaded", dimGray+fmtTokens(int64(len(bin)))+reset)
+
 	if err := verifyChecksum(tag, asset, bin); err != nil {
 		fmt.Fprintf(os.Stderr, "  %s %v\n\n", failMark, err)
 		return 3
 	}
-	fmt.Printf("  %s checksum verified\n", okMark)
+	step(okMark, "checksum verified", "")
 
 	if err := replaceSelf(self, bin); err != nil {
 		fmt.Fprintf(os.Stderr, "  %s install failed: %v\n", failMark, err)
 		fmt.Fprintf(os.Stderr, "  %sno write access to %s? re-run the installer instead%s\n\n", dim, self, reset)
 		return 1
 	}
-	fmt.Printf("  %s updated to %s%s%s %s(%s)%s\n", okMark, bold, tag, reset, dim, self, reset)
-	fmt.Printf("  %srestart Claude Code to pick it up%s\n\n", dim, reset)
+	step(okMark, "installed", dimGray+self+reset)
+	fmt.Printf("\n  %srestart Claude Code to pick it up%s\n\n", dim, reset)
 	return 0
+}
+
+// step prints one settled stage: mark, label in a fixed column, then detail.
+func step(mark, label, detail string) {
+	if detail == "" {
+		fmt.Printf("  %s %s%s%s\n", mark, white, label, reset)
+		return
+	}
+	fmt.Printf("  %s %s%-17s%s %s\n", mark, white, label, reset, detail)
 }
 
 // selfPath resolves symlinks so an update replaces the real binary rather
@@ -251,9 +270,22 @@ func selfPath() (string, error) {
 	return resolved, nil
 }
 
+// downloadAsset reports progress only when someone is watching a terminal;
+// piped into a log it stays silent and the caller prints one settled line.
 func downloadAsset(tag, asset string) ([]byte, error) {
 	url := fmt.Sprintf("https://github.com/%s/releases/download/%s/%s", repoSlug(), tag, asset)
-	return httpGet(url, 120*time.Second, 128<<20)
+	if !stdoutIsTerminal() {
+		return httpGet(url, 120*time.Second, 128<<20)
+	}
+	var p *progressReader
+	bin, err := httpGetTracked(url, 120*time.Second, 128<<20, func(r io.Reader, total int64) io.Reader {
+		p = &progressReader{r: r, total: total}
+		return p
+	})
+	if p != nil {
+		p.clear()
+	}
+	return bin, err
 }
 
 // verifyChecksum fails closed: a release without SHA256SUMS, or one that
@@ -287,6 +319,12 @@ func checksumFor(sums, asset string) string {
 }
 
 func httpGet(url string, timeout time.Duration, maxBytes int64) ([]byte, error) {
+	return httpGetTracked(url, timeout, maxBytes, nil)
+}
+
+// track, when set, wraps the response body and is handed the declared length
+// so a caller can report progress. Everything else goes through httpGet.
+func httpGetTracked(url string, timeout time.Duration, maxBytes int64, track func(io.Reader, int64) io.Reader) ([]byte, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
@@ -301,7 +339,11 @@ func httpGet(url string, timeout time.Duration, maxBytes int64) ([]byte, error) 
 	if resp.StatusCode != 200 {
 		return nil, fmt.Errorf("%s returned %d", url, resp.StatusCode)
 	}
-	return io.ReadAll(io.LimitReader(resp.Body, maxBytes))
+	var body io.Reader = io.LimitReader(resp.Body, maxBytes)
+	if track != nil {
+		body = track(body, resp.ContentLength)
+	}
+	return io.ReadAll(body)
 }
 
 // replaceSelf swaps the binary atomically via a same-directory temp file, so
