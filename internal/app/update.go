@@ -164,10 +164,7 @@ func assetName() (string, error) {
 	case "linux":
 		return "claude-gisx-linux-" + arch, nil
 	case "darwin":
-		if arch != "arm64" {
-			return "", fmt.Errorf("Intel Macs aren't supported — build from source")
-		}
-		return "claude-gisx-darwin-arm64", nil
+		return "claude-gisx-darwin-" + arch, nil
 	case "windows":
 		if arch != "x64" {
 			return "", fmt.Errorf("unsupported architecture: %s", runtime.GOARCH)

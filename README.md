@@ -203,11 +203,11 @@ cd claude-gisx
 make build         # build for host platform → ./claude-gisx
 make test          # go test -race
 make check         # fmt-check + vet + test (what CI runs)
-make dist          # cross-compile all four release targets → dist/
+make dist          # cross-compile all five release targets → dist/
 make run           # build and render with a sample stdin fixture
 ```
 
-Releases ship `linux-x64`, `linux-arm64`, `darwin-arm64`, and `windows-x64` binaries (~6 MB each). Intel Macs aren't built — Apple Silicon only on darwin. Tag with `v*` to trigger `.github/workflows/release.yml`, which uploads the four binaries plus `SHA256SUMS` to GitHub Releases. Every push/PR runs `.github/workflows/ci.yml` (vet + gofmt + tests + smoke build).
+Releases ship `linux-x64`, `linux-arm64`, `darwin-x64`, `darwin-arm64`, and `windows-x64` binaries (~6 MB each). Tag with `v*` to trigger `.github/workflows/release.yml`, which uploads the five binaries plus `SHA256SUMS` to GitHub Releases. Every push/PR runs `.github/workflows/ci.yml` (vet + gofmt + tests + smoke build).
 
 ## License
 

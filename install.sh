@@ -59,9 +59,6 @@ detect_target() {
         aarch64|arm64) arch="arm64" ;;
         *) fail "unsupported architecture: $arch" 2 ;;
     esac
-    if [ "$os" = "darwin" ] && [ "$arch" = "x64" ]; then
-        fail "Intel Macs aren't supported — Apple Silicon (darwin-arm64) only. Build from source: https://github.com/${REPO}#build-from-source" 2
-    fi
     printf "%s-%s" "$os" "$arch"
 }
 
