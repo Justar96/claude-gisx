@@ -4,7 +4,7 @@ A rich, dynamic statusline for [Claude Code](https://docs.claude.com/en/docs/cla
 
 ```
 Claude Opus 4.8/high · ████░░░░░░░░░░░ 28%/1M +ext · myproject:main · 42m · $1.20
-5h 32% resets 3h 12m · 7d 8% resets 5d 2h · Fable 61% resets 5d 2h · extra $4.20/$20.00 · 15.7M ▼47%
+5h 32% resets 3h 12m · 7d 8% resets 5d 2h · Fable 61% resets 5d 2h · cache 96% · in 1.5M · out 15.1k · extra $4.20/$20.00
 new in 2.1.215 · Claude no longer runs /verify and /code-review on its own
 ```
 
@@ -80,6 +80,7 @@ $ claude-gisx
 - **Dynamic color coding** — green / cyan / orange / yellow / red based on usage thresholds
 - **Rate limit tracking** — 5-hour and 7-day usage with time-to-reset, plus any per-model quota your plan tracks separately (e.g. `Fable 61% resets 5d 2h`)
 - **Weekly token trend** — `15.7M ▼47%` closes the usage line: this week's tokens summed from `dailyModelTokens` in `~/.claude/stats-cache.json`, and the change against the previous week (green `▲` up, dim `▼` down). Measured against that cache's own newest date and hidden once it's >10 days stale, since Claude Code only refreshes it when you open `/usage`
+- **Cache hit rate and session token split** — `cache 96% · in 1.5M · out 15.1k` sits with the quotas on the usage line: how much of this session's input the prompt cache absorbed, and the totals it's a share of. Summed from the session transcript's per-request `usage`, which is the only place the input/output split and the cache breakdown exist — `in` counts everything billed as input (cached prefix included, once per request), `out` is completions. The percentage is graded on its own scale (green ≥90, cyan ≥75, yellow ≥50, red below) because a healthy session lives in the 90s and the quota thresholds would paint that whole band one flat green. Read incrementally from where the last render stopped, so a multi-megabyte transcript costs a seek, not a re-parse
 - **Git integration** — branch name and dirty state, plus worktree (`⌥`) and PR (`PR #1234`, colored by review state) indicators when present
 - **Session duration** and **cost** tracking from the live `cost.*` fields
 - **Effort level** rendered right on the model name (`Claude Opus 4.8/high`), from the session's `effort.level` — hidden for models with no effort dial

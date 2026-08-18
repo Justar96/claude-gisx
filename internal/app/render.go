@@ -27,6 +27,7 @@ type sessionInput struct {
 	Worktree      *nameInfo      `json:"worktree,omitempty"`
 	RateLimits    *rateLimits    `json:"rate_limits,omitempty"`
 	SessionID     string         `json:"session_id,omitempty"`
+	Transcript    string         `json:"transcript_path,omitempty"`
 }
 
 type modelInfo struct {
@@ -221,18 +222,32 @@ func renderStatusline(stdinJSON string) {
 
 	// Per-model quotas (e.g. Fable) and extra credits come from the OAuth
 	// usage endpoint — the statusline payload only carries 5h/7d.
-	if u := fetchUsage(context.Background()); u != nil {
+	u := fetchUsage(context.Background())
+	if u != nil {
 		for _, s := range u.Scoped {
 			writeBucket(&R, s.Name, s.Pct, s.ResetsAt, false)
 			limitPct = maxi(limitPct, s.Pct)
 		}
-		if u.Extra != nil {
-			if R.Len() > 0 {
-				R.WriteString(sep)
-			}
-			R.WriteString(dimGray + "extra" + reset + " " + white + "$" + u.Extra.Used +
-				dimGray + "/" + reset + white + "$" + u.Extra.Limit + reset)
+	}
+
+	// Sits with the quotas, not after the credits: it's the same kind of
+	// reading on the same scale — how much of a budget is gone — asked of the
+	// session's own input instead of the plan's. Rendered outside the OAuth
+	// block because it holds for accounts that endpoint says nothing about.
+	if tk := paintTokens(sessionTokens(data.Transcript)); tk != "" {
+		if R.Len() > 0 {
+			R.WriteString(sep)
 		}
+		R.WriteString(tk)
+	}
+
+	// Dollars close the line — the one figure here that isn't a percentage.
+	if u != nil && u.Extra != nil {
+		if R.Len() > 0 {
+			R.WriteString(sep)
+		}
+		R.WriteString(dimGray + "extra" + reset + " " + white + "$" + u.Extra.Used +
+			dimGray + "/" + reset + white + "$" + u.Extra.Limit + reset)
 	}
 
 	// ── Line 3: plugin output or built-in tip ─────────────────────────────

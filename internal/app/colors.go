@@ -95,6 +95,23 @@ func effortColor(level string) string {
 	}
 }
 
+// Cache hit rates live in a much narrower band than the quota percentages
+// remainingColor grades — a healthy session sits in the 90s and anything
+// below ~75% means the prefix keeps getting invalidated. On the quota scale
+// that whole range is one flat green, so it gets its own thresholds.
+func cacheColor(p int) string {
+	switch {
+	case p >= 90:
+		return green
+	case p >= 75:
+		return cyan
+	case p >= 50:
+		return yellow
+	default:
+		return red
+	}
+}
+
 func remainingColor(p int) string {
 	switch {
 	case p >= 70:
