@@ -122,3 +122,12 @@ func remainingColor(p int) string {
 		return red
 	}
 }
+
+// link wraps text in an OSC 8 hyperlink. Skipped when color is off: a plain
+// text consumer has no use for the escapes, and NO_COLOR is a request for none.
+func link(text, url string) string {
+	if url == "" || reset == "" {
+		return text
+	}
+	return "\x1b]8;;" + url + "\x1b\\" + text + "\x1b]8;;\x1b\\"
+}

@@ -17,8 +17,14 @@ type gitState struct {
 // so the separate rev-parse probe and symbolic-ref call were both redundant.
 // Process spawns dominate this statusline's cost on a slow machine — cutting
 // three to one is the single biggest win available.
+//
+// --no-optional-locks: a status that can't take index.lock (Claude Code or the
+// user mid-commit) would otherwise fail and blank the branch. It also skips
+// the index refresh write, so a render never contends with real git work.
+// --no-ahead-behind: counting commits against upstream walks history, and the
+// count isn't shown.
 func gitInfo(cwd string) gitState {
-	out, err := exec.Command("git", "-C", cwd, "status", "--porcelain=v2", "--branch").Output()
+	out, err := exec.Command("git", "--no-optional-locks", "-C", cwd, "status", "--porcelain=v2", "--branch", "--no-ahead-behind").Output()
 	if err != nil {
 		return gitState{}
 	}

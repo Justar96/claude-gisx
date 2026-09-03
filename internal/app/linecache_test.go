@@ -221,3 +221,13 @@ func TestCacheDirIsPerUserAndPrivate(t *testing.T) {
 		t.Errorf("cache dir should be scoped to the uid, got %q", d)
 	}
 }
+
+func TestLimitsRoundTripsSpendLimit(t *testing.T) {
+	isolateHome(t)
+	now := time.Now()
+	saveLimits(&rateLimits{SpendLimit: &rateBucket{UsedPercentage: 120, ResetsAt: now.Add(time.Hour).Unix()}})
+	got := loadLimits(now)
+	if got == nil || got.SpendLimit == nil || int(got.SpendLimit.UsedPercentage) != 120 {
+		t.Fatalf("spend_limit did not survive the round trip: %+v", got)
+	}
+}

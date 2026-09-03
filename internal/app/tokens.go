@@ -160,13 +160,35 @@ func pruneTokenCaches() {
 // session's input came off the prompt cache, and the totals it's a share of.
 // `in` is everything the API charged as input, cached or not, so it counts the
 // same cached prefix once per request — which is exactly how it's billed.
-func paintTokens(t tokenTotals) string {
+//
+// The hit rate comes from the payload's prompt_cache when Claude Code sends
+// one (v2.1.251+) — it's the same figure /usage shows — and from the transcript
+// sum on older versions. "cold" means the cached prefix has aged out and the
+// next request pays to rebuild it; a miss count is a prefix that was
+// invalidated with no compaction to explain it.
+func paintTokens(t tokenTotals, pc *promptCache) string {
 	in := t.Input + t.Write + t.Read
-	if in == 0 {
+	hit := -1
+	switch {
+	case pc != nil && pc.HitRatio != nil:
+		hit = int(*pc.HitRatio * 100)
+	case in > 0:
+		hit = int(t.Read * 100 / in)
+	}
+	if hit < 0 {
 		return ""
 	}
-	hit := int(t.Read * 100 / in)
-	return white + "cache" + reset + " " + cacheColor(hit) + fmt.Sprintf("%d%%", hit) + reset +
-		sep + dimGray + "in" + reset + " " + white + fmtTokens(in) + reset +
-		sep + dimGray + "out" + reset + " " + white + fmtTokens(t.Output) + reset
+	var b strings.Builder
+	b.WriteString(white + "cache" + reset + " " + cacheColor(hit) + fmt.Sprintf("%d%%", hit) + reset)
+	if pc != nil && pc.CachingObserved && !pc.Warm {
+		b.WriteString(" " + dimGray + "cold" + reset)
+	}
+	if pc != nil && pc.Misses > 0 {
+		b.WriteString(" " + dimGray + fmt.Sprintf("%d miss", pc.Misses) + reset)
+	}
+	if in > 0 {
+		b.WriteString(sep + dimGray + "in" + reset + " " + white + fmtTokens(in) + reset +
+			sep + dimGray + "out" + reset + " " + white + fmtTokens(t.Output) + reset)
+	}
+	return b.String()
 }

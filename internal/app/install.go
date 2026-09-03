@@ -210,6 +210,11 @@ func installCmd(opts installOpts) int {
 	}
 	sl["type"] = "command"
 	sl["command"] = command
+	// We render vim.mode ourselves; without this Claude Code also prints
+	// "-- INSERT --" under the prompt. Left alone if the user set it.
+	if _, ok := sl["hideVimModeIndicator"]; !ok {
+		sl["hideVimModeIndicator"] = true
+	}
 	s["statusLine"] = sl
 	if err := writeJSONFile(settingsPath(), s); err != nil {
 		fmt.Fprintf(os.Stderr, "  %s write failed: %v\n", failMark, err)

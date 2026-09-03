@@ -22,19 +22,20 @@ func lineCacheDir() string { return filepath.Join(claudeDir(), "cache") }
 func limitsCachePath() string { return filepath.Join(lineCacheDir(), "statusline-limits.json") }
 
 type limitsSnapshot struct {
-	FiveHour *rateBucket `json:"five_hour,omitempty"`
-	SevenDay *rateBucket `json:"seven_day,omitempty"`
+	FiveHour   *rateBucket `json:"five_hour,omitempty"`
+	SevenDay   *rateBucket `json:"seven_day,omitempty"`
+	SpendLimit *rateBucket `json:"spend_limit,omitempty"`
 }
 
 func hasBuckets(rl *rateLimits) bool {
-	return rl != nil && (rl.FiveHour != nil || rl.SevenDay != nil)
+	return rl != nil && (rl.FiveHour != nil || rl.SevenDay != nil || rl.SpendLimit != nil)
 }
 
 func saveLimits(rl *rateLimits) {
 	if !hasBuckets(rl) {
 		return
 	}
-	raw, err := json.Marshal(limitsSnapshot{FiveHour: rl.FiveHour, SevenDay: rl.SevenDay})
+	raw, err := json.Marshal(limitsSnapshot{FiveHour: rl.FiveHour, SevenDay: rl.SevenDay, SpendLimit: rl.SpendLimit})
 	if err != nil {
 		return
 	}
@@ -66,7 +67,7 @@ func loadLimits(now time.Time) *rateLimits {
 		}
 		return b
 	}
-	rl := &rateLimits{FiveHour: open(s.FiveHour), SevenDay: open(s.SevenDay)}
+	rl := &rateLimits{FiveHour: open(s.FiveHour), SevenDay: open(s.SevenDay), SpendLimit: open(s.SpendLimit)}
 	if !hasBuckets(rl) {
 		return nil
 	}

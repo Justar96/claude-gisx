@@ -8,7 +8,9 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
+	"unicode/utf8"
 )
 
 type sessionInput struct {
@@ -26,7 +28,9 @@ type sessionInput struct {
 	PR            *prInfo        `json:"pr,omitempty"`
 	Worktree      *nameInfo      `json:"worktree,omitempty"`
 	RateLimits    *rateLimits    `json:"rate_limits,omitempty"`
+	PromptCache   *promptCache   `json:"prompt_cache,omitempty"`
 	SessionID     string         `json:"session_id,omitempty"`
+	SessionName   string         `json:"session_name,omitempty"`
 	Transcript    string         `json:"transcript_path,omitempty"`
 }
 
@@ -37,6 +41,8 @@ type modelInfo struct {
 type workspaceInfo struct {
 	CurrentDir string `json:"current_dir,omitempty"`
 	ProjectDir string `json:"project_dir,omitempty"`
+	// Any linked worktree, not just a Claude worktree session (worktree.name).
+	GitWorktree string `json:"git_worktree,omitempty"`
 }
 type contextInfo struct {
 	UsedPercentage    *float64 `json:"used_percentage,omitempty"`
@@ -45,6 +51,8 @@ type contextInfo struct {
 type costInfo struct {
 	TotalCostUSD    float64 `json:"total_cost_usd,omitempty"`
 	TotalDurationMS int64   `json:"total_duration_ms,omitempty"`
+	LinesAdded      int64   `json:"total_lines_added,omitempty"`
+	LinesRemoved    int64   `json:"total_lines_removed,omitempty"`
 }
 type levelInfo struct {
 	Level string `json:"level,omitempty"`
@@ -57,15 +65,29 @@ type modeInfo struct {
 }
 type prInfo struct {
 	Number      int    `json:"number,omitempty"`
+	URL         string `json:"url,omitempty"`
 	ReviewState string `json:"review_state,omitempty"`
+	Kind        string `json:"kind,omitempty"` // "mr" for a GitLab merge request
 }
 type rateLimits struct {
 	FiveHour *rateBucket `json:"five_hour,omitempty"`
 	SevenDay *rateBucket `json:"seven_day,omitempty"`
+	// Behind a Claude apps gateway; used_percentage may exceed 100.
+	SpendLimit *rateBucket `json:"spend_limit,omitempty"`
 }
 type rateBucket struct {
 	UsedPercentage float64 `json:"used_percentage,omitempty"`
 	ResetsAt       int64   `json:"resets_at,omitempty"`
+}
+
+// Claude Code's own view of the main conversation's cache (v2.1.251+). It
+// covers exactly the requests that count, so it wins over our transcript sum
+// for the hit rate; the transcript still supplies the in/out totals.
+type promptCache struct {
+	Warm            bool     `json:"warm"`
+	CachingObserved bool     `json:"caching_observed"`
+	HitRatio        *float64 `json:"hit_ratio"` // null until any input was counted
+	Misses          int      `json:"misses"`
 }
 
 func renderStatusline(stdinJSON string) {
@@ -121,10 +143,30 @@ func renderStatusline(stdinJSON string) {
 		effortLevel = data.Effort.Level
 	}
 
+	// Everything that leaves the process — git, the OAuth endpoint, the
+	// transcript, the plugin, the release check — is independent, so the
+	// render pays for the slowest one rather than the sum. Claude Code kills
+	// a render that overruns the next trigger, so wall time is the budget.
+	var (
+		g         gitState
+		u         *usage
+		tk        tokenTotals
+		pluginOut string
+		updateTag string
+		wg        sync.WaitGroup
+	)
+	wg.Add(5)
+	go func() { defer wg.Done(); g = gitInfo(cwd) }()
+	go func() { defer wg.Done(); u = fetchUsage(context.Background()) }()
+	go func() { defer wg.Done(); tk = sessionTokens(data.Transcript) }()
+	go func() { defer wg.Done(); pluginOut = runPlugin(stdinJSON) }()
+	go func() { defer wg.Done(); updateTag = availableUpdate(6 * time.Hour) }()
+
 	cs := computeCompactState(ctxSize)
-	g := gitInfo(cwd)
 	dir := filepath.Base(cwd)
 	dur := fmtDuration(durationMs)
+	trend := tokenTrend()
+	wg.Wait()
 
 	// ── Line 1: model + bar + workspace + session meta ────────────────────
 	var L strings.Builder
@@ -151,7 +193,7 @@ func renderStatusline(stdinJSON string) {
 	// Sits with the context bar rather than on the usage line: both are
 	// "how much am I burning", and line 2 only renders when there are quotas
 	// to report, which a fresh session doesn't have yet.
-	if trend := tokenTrend(); trend != "" {
+	if trend != "" {
 		L.WriteString(sep + trend)
 	}
 
@@ -159,8 +201,22 @@ func renderStatusline(stdinJSON string) {
 	if g.branch != "" {
 		L.WriteString(dim + ":" + reset + green + g.branch + red + g.dirty + reset)
 	}
-	if data.Worktree != nil && data.Worktree.Name != "" {
-		L.WriteString(sep + magenta + "⌥ " + data.Worktree.Name + reset)
+	// worktree.name is only set inside a Claude worktree session; the
+	// workspace field covers any linked worktree you happen to be in.
+	wt := ""
+	if data.Worktree != nil {
+		wt = data.Worktree.Name
+	}
+	if wt == "" && data.Workspace != nil {
+		wt = data.Workspace.GitWorktree
+	}
+	if wt != "" {
+		L.WriteString(sep + magenta + "⌥ " + wt + reset)
+	}
+	// Only a name someone chose or Claude generated — never the random
+	// default — so it's worth the width when present. Titles run long.
+	if name := truncate(data.SessionName, 32); name != "" {
+		L.WriteString(sep + dimGray + name + reset)
 	}
 	if dur != "" {
 		L.WriteString(sep + white + dur + reset)
@@ -170,6 +226,10 @@ func renderStatusline(stdinJSON string) {
 		if costStr != "0.00" {
 			L.WriteString(sep + white + "$" + costStr + reset)
 		}
+	}
+	if data.Cost != nil && (data.Cost.LinesAdded > 0 || data.Cost.LinesRemoved > 0) {
+		L.WriteString(sep + green + fmt.Sprintf("+%d", data.Cost.LinesAdded) + reset +
+			" " + red + fmt.Sprintf("-%d", data.Cost.LinesRemoved) + reset)
 	}
 	if data.OutputStyle != nil && data.OutputStyle.Name != "" && data.OutputStyle.Name != "default" {
 		L.WriteString(sep + dimGray + "style:" + reset + cyan + data.OutputStyle.Name + reset)
@@ -187,7 +247,11 @@ func renderStatusline(stdinJSON string) {
 		case "draft":
 			col = dimGray
 		}
-		L.WriteString(sep + col + fmt.Sprintf("PR #%d", data.PR.Number) + reset)
+		kind := "PR"
+		if data.PR.Kind == "mr" {
+			kind = "MR"
+		}
+		L.WriteString(sep + col + link(fmt.Sprintf("%s #%d", kind, data.PR.Number), data.PR.URL) + reset)
 	}
 	if data.Agent != nil && data.Agent.Name != "" {
 		L.WriteString(sep + magenta + "@" + data.Agent.Name + reset)
@@ -217,12 +281,16 @@ func renderStatusline(stdinJSON string) {
 			weekPct = int(rl.SevenDay.UsedPercentage)
 			writeBucket(&R, "7d", weekPct, rl.SevenDay.ResetsAt, stale)
 		}
+		if rl.SpendLimit != nil {
+			spendPct := int(rl.SpendLimit.UsedPercentage)
+			writeBucket(&R, "spend", spendPct, rl.SpendLimit.ResetsAt, stale)
+			limitPct = maxi(limitPct, spendPct)
+		}
 	}
-	limitPct = maxi(fivePct, weekPct)
+	limitPct = maxi(limitPct, maxi(fivePct, weekPct))
 
 	// Per-model quotas (e.g. Fable) and extra credits come from the OAuth
 	// usage endpoint — the statusline payload only carries 5h/7d.
-	u := fetchUsage(context.Background())
 	if u != nil {
 		for _, s := range u.Scoped {
 			writeBucket(&R, s.Name, s.Pct, s.ResetsAt, false)
@@ -234,11 +302,11 @@ func renderStatusline(stdinJSON string) {
 	// reading on the same scale — how much of a budget is gone — asked of the
 	// session's own input instead of the plan's. Rendered outside the OAuth
 	// block because it holds for accounts that endpoint says nothing about.
-	if tk := paintTokens(sessionTokens(data.Transcript)); tk != "" {
+	if s := paintTokens(tk, data.PromptCache); s != "" {
 		if R.Len() > 0 {
 			R.WriteString(sep)
 		}
-		R.WriteString(tk)
+		R.WriteString(s)
 	}
 
 	// Dollars close the line — the one figure here that isn't a percentage.
@@ -251,13 +319,13 @@ func renderStatusline(stdinJSON string) {
 	}
 
 	// ── Line 3: plugin output or built-in tip ─────────────────────────────
-	pluginOut := runPlugin(stdinJSON)
 	T := tipLine(tipContext{
 		ctxPct:   pctUsed,
 		limitPct: limitPct,
 		weekPct:  weekPct,
 		compact:  cs,
 		plugin:   pluginOut,
+		update:   updateTag,
 	})
 
 	w := os.Stdout
@@ -286,4 +354,13 @@ func writeBucket(b *strings.Builder, name string, pct int, resetsAt int64, stale
 	if t := fmtRemaining(resetsAt); t != "" {
 		b.WriteString(" " + dimGray + "resets" + reset + " " + left + t + reset)
 	}
+}
+
+// truncate cuts s to at most n runes, ending in an ellipsis when it had to.
+func truncate(s string, n int) string {
+	if utf8.RuneCountInString(s) <= n {
+		return s
+	}
+	r := []rune(s)
+	return strings.TrimRight(string(r[:n-1]), " ") + "…"
 }

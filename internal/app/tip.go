@@ -12,6 +12,7 @@ type tipContext struct {
 	weekPct  int // 7-day bucket
 	compact  compactState
 	plugin   string
+	update   string // newer release tag, if the cached check found one
 }
 
 // A warning holds the line for two renders out of every three. Both warnings
@@ -35,7 +36,7 @@ func tipLine(t tipContext) string {
 	}
 	// Rare and actionable, so it outranks the rotation — but not the warnings
 	// above, and not a user's own plugin line.
-	if tag := availableUpdate(6 * time.Hour); tag != "" {
+	if tag := t.update; tag != "" {
 		return pinkTint("✦ claude-gisx "+tag+" available") + " " + dim + "·" + reset + " " +
 			dimGray + "claude-gisx update" + reset
 	}

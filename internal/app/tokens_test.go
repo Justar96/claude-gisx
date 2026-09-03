@@ -108,12 +108,43 @@ func TestSessionTokensMissingTranscript(t *testing.T) {
 var ansiRe = regexp.MustCompile(`\x1b\[[0-9;]*m`)
 
 func TestPaintTokens(t *testing.T) {
-	if got := paintTokens(tokenTotals{}); got != "" {
+	if got := paintTokens(tokenTotals{}, nil); got != "" {
 		t.Errorf("no input should render nothing, got %q", got)
 	}
-	got := ansiRe.ReplaceAllString(paintTokens(tokenTotals{Input: 2_000, Write: 8_000, Read: 990_000, Output: 34_000}), "")
+	got := ansiRe.ReplaceAllString(paintTokens(tokenTotals{Input: 2_000, Write: 8_000, Read: 990_000, Output: 34_000}, nil), "")
 	want := "cache 99% · in 1.0M · out 34.0k"
 	if got != want {
 		t.Errorf("paintTokens = %q, want %q", got, want)
+	}
+}
+
+// With prompt_cache in the payload, Claude Code's own hit ratio is the one to
+// show — it covers exactly the main conversation — while the transcript still
+// supplies the in/out totals the payload lacks.
+func TestPaintTokensPrefersPayloadCache(t *testing.T) {
+	ratio := 0.42
+	pc := &promptCache{Warm: false, CachingObserved: true, HitRatio: &ratio, Misses: 3}
+	got := ansiRe.ReplaceAllString(paintTokens(tokenTotals{Input: 500, Read: 500, Output: 10}, pc), "")
+	want := "cache 42% cold 3 miss · in 1.0k · out 10"
+	if got != want {
+		t.Errorf("got %q, want %q", got, want)
+	}
+	// A payload ratio alone (no transcript yet) still renders the rate.
+	got = ansiRe.ReplaceAllString(paintTokens(tokenTotals{}, &promptCache{Warm: true, CachingObserved: true, HitRatio: &ratio}), "")
+	if got != "cache 42%" {
+		t.Errorf("payload-only: got %q", got)
+	}
+	// A null hit_ratio with an empty transcript has nothing to say.
+	if got := paintTokens(tokenTotals{}, &promptCache{}); got != "" {
+		t.Errorf("null ratio: got %q, want empty", got)
+	}
+}
+
+func TestTruncate(t *testing.T) {
+	if got := truncate("short", 10); got != "short" {
+		t.Errorf("got %q", got)
+	}
+	if got := truncate("a fairly long session title", 10); got != "a fairly…" {
+		t.Errorf("got %q", got)
 	}
 }

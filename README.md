@@ -3,7 +3,7 @@
 A rich, dynamic statusline for [Claude Code](https://docs.claude.com/en/docs/claude-code) — single self-contained binary, no runtime deps.
 
 ```
-Claude Opus 4.8/high · ████░░░░░░░░░░░ 28%/1M +ext · myproject:main · 42m · $1.20
+Claude Opus 4.8/high · ████░░░░░░░░░░░ 28%/1M +ext · myproject:main · 42m · $1.20 · +128 -31 · PR #42
 5h 32% resets 3h 12m · 7d 8% resets 5d 2h · Fable 61% resets 5d 2h · cache 96% · in 1.5M · out 15.1k · extra $4.20/$20.00
 new in 2.1.215 · Claude no longer runs /verify and /code-review on its own
 ```
@@ -27,7 +27,7 @@ The installer:
 1. Detects your OS + arch and downloads the matching binary from [GitHub Releases](https://github.com/Justar96/claude-gisx/releases/latest).
 2. Verifies the SHA-256 checksum if `SHA256SUMS` is published with the release.
 3. Drops the binary at `~/.local/bin/claude-gisx` (Linux/macOS) or `%LOCALAPPDATA%\Programs\claude-gisx\claude-gisx.exe` (Windows).
-4. Runs `claude-gisx setup` to wire it into `~/.claude/settings.json`. Your existing `statusLine` is backed up first.
+4. Runs `claude-gisx setup` to wire it into `~/.claude/settings.json`. Your existing `statusLine` is backed up first. Setup also sets `hideVimModeIndicator` (left alone if you already set it), since the statusline renders the vim mode itself.
 
 #### Installer options
 
@@ -78,11 +78,12 @@ $ claude-gisx
 - **Auto-compact notice** — reads Claude Code's actual auto-compact env vars (`CLAUDE_AUTOCOMPACT_PCT_OVERRIDE`, `CLAUDE_CODE_AUTO_COMPACT_WINDOW`, `DISABLE_COMPACT`). When you've configured a threshold, a bold red `⚠ compact N%` badge appears once usage reaches it. With `DISABLE_COMPACT` set, the badge becomes a dim `compact:off`. No env var set → no badge
 - **Extended-context badge** — `+ext` appears when a 1M-model session crosses the 200k boundary (`exceeds_200k_tokens`)
 - **Dynamic color coding** — green / cyan / orange / yellow / red based on usage thresholds
-- **Rate limit tracking** — 5-hour and 7-day usage with time-to-reset, plus any per-model quota your plan tracks separately (e.g. `Fable 61% resets 5d 2h`)
+- **Rate limit tracking** — 5-hour and 7-day usage with time-to-reset, plus any per-model quota your plan tracks separately (e.g. `Fable 61% resets 5d 2h`). Behind a Claude apps gateway, the `spend` limit from `rate_limits.spend_limit` joins them (it can pass 100%)
 - **Weekly token trend** — `15.7M ▼47%` closes the usage line: this week's tokens summed from `dailyModelTokens` in `~/.claude/stats-cache.json`, and the change against the previous week (green `▲` up, dim `▼` down). Measured against that cache's own newest date and hidden once it's >10 days stale, since Claude Code only refreshes it when you open `/usage`
-- **Cache hit rate and session token split** — `cache 96% · in 1.5M · out 15.1k` sits with the quotas on the usage line: how much of this session's input the prompt cache absorbed, and the totals it's a share of. Summed from the session transcript's per-request `usage`, which is the only place the input/output split and the cache breakdown exist — `in` counts everything billed as input (cached prefix included, once per request), `out` is completions. The percentage is graded on its own scale (green ≥90, cyan ≥75, yellow ≥50, red below) because a healthy session lives in the 90s and the quota thresholds would paint that whole band one flat green. Read incrementally from where the last render stopped, so a multi-megabyte transcript costs a seek, not a re-parse
-- **Git integration** — branch name and dirty state, plus worktree (`⌥`) and PR (`PR #1234`, colored by review state) indicators when present
-- **Session duration** and **cost** tracking from the live `cost.*` fields
+- **Cache hit rate and session token split** — `cache 96% · in 1.5M · out 15.1k` sits with the quotas on the usage line: how much of this session's input the prompt cache absorbed, and the totals it's a share of. The rate is Claude Code's own `prompt_cache.hit_ratio` (v2.1.251+, the same figure `/usage` shows), falling back to a sum over the transcript on older versions; `cold` appears when the cached prefix has passed its TTL and the next request rebuilds it, and `N miss` counts prefixes invalidated with no compaction to explain it. `in`/`out` come from the session transcript's per-request `usage`, the only place the input/output split exists — `in` counts everything billed as input (cached prefix included, once per request), `out` is completions. The percentage is graded on its own scale (green ≥90, cyan ≥75, yellow ≥50, red below) because a healthy session lives in the 90s and the quota thresholds would paint that whole band one flat green. Read incrementally from where the last render stopped, so a multi-megabyte transcript costs a seek, not a re-parse
+- **Git integration** — branch name and dirty state (one `git status --no-optional-locks`, so it never fights a commit in progress), plus worktree (`⌥`, for Claude worktree sessions and any linked worktree via `workspace.git_worktree`) and PR/MR (`PR #1234` or `MR #12` for GitLab, colored by review state, clickable via OSC 8 where the terminal supports it) indicators when present
+- **Session name** — the `--name`/`/rename` name or the AI-generated title, truncated to 32 characters, so parallel sessions read apart at a glance
+- **Session duration**, **cost**, and **lines changed** (`+128 -31`) from the live `cost.*` fields
 - **Effort level** rendered right on the model name (`Claude Opus 4.8/high`), from the session's `effort.level` — hidden for models with no effort dial
 - **Fast mode** chip (`fast`) when the session has fast mode on
 - **Extra usage** credits display (OAuth accounts)
@@ -99,7 +100,8 @@ If you'd rather skip the installer wiring, add this yourself to `~/.claude/setti
 {
   "statusLine": {
     "type": "command",
-    "command": "claude-gisx"
+    "command": "claude-gisx",
+    "hideVimModeIndicator": true
   }
 }
 ```
