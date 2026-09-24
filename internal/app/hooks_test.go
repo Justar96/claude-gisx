@@ -109,7 +109,7 @@ func TestOfferAPIKeys(t *testing.T) {
 	isolateHome(t)
 	clearKeys(t)
 	asked := answers(t, "ts-secret", "")
-	offerAPIKeys("", true)
+	offerAPIKeys("", true, false)
 	if len(*asked) != 2 {
 		t.Fatalf("expected both keys asked, got %d", len(*asked))
 	}
@@ -122,7 +122,7 @@ func TestOfferAPIKeys(t *testing.T) {
 	}
 	// A key set anywhere isn't asked for again; DeepSeek is skipped without the hook.
 	asked = answers(t)
-	offerAPIKeys("", false)
+	offerAPIKeys("", false, false)
 	if len(*asked) != 0 {
 		t.Fatalf("asked %q", *asked)
 	}
@@ -138,5 +138,43 @@ func TestSetGisxConfigKeepsOtherKeys(t *testing.T) {
 	raw, _ := os.ReadFile(gisxConfigPath())
 	if !strings.Contains(string(raw), "SUGGEST_MIN") || !strings.Contains(string(raw), `"k"`) {
 		t.Fatalf("got %s", raw)
+	}
+}
+
+func TestOfferAPIKeysPromotesProjectKeys(t *testing.T) {
+	isolateHome(t)
+	clearKeys(t)
+	project := t.TempDir()
+	writeFile(t, project+"/.env", "TYPESAFE_API_KEY=ts-proj\nDEEPSEEK_API_KEY=ds-proj\n")
+	// Enter (default yes) for TypeSafe, "n" for DeepSeek.
+	answers(t, "", "n")
+	offerAPIKeys(project, true, false)
+	global := loadConfig("")
+	if global.value("TYPESAFE_API_KEY") != "ts-proj" {
+		t.Fatal("accepted key should be saved for every project")
+	}
+	if global.value("DEEPSEEK_API_KEY") != "" {
+		t.Fatal("declined key must stay project-only")
+	}
+	// Now global: setup doesn't ask about it again.
+	asked := answers(t, "n")
+	offerAPIKeys(project, true, false)
+	if len(*asked) != 1 {
+		t.Fatalf("expected only the DeepSeek question, got %q", *asked)
+	}
+}
+
+func TestKeysCommandAsksEvenWhenSet(t *testing.T) {
+	isolateHome(t)
+	clearKeys(t)
+	writeFile(t, gisxConfigPath(), `{"TYPESAFE_API_KEY":"old"}`)
+	asked := answers(t, "", "ds-new") // keep TypeSafe, set DeepSeek
+	offerAPIKeys("", false, true)
+	if len(*asked) != 2 {
+		t.Fatalf("keys should ask for both, got %d", len(*asked))
+	}
+	cfg := loadConfig("")
+	if cfg.value("TYPESAFE_API_KEY") != "old" || cfg.value("DEEPSEEK_API_KEY") != "ds-new" {
+		t.Fatalf("got ts=%q ds=%q", cfg.value("TYPESAFE_API_KEY"), cfg.value("DEEPSEEK_API_KEY"))
 	}
 }

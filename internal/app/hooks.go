@@ -228,35 +228,99 @@ var apiKeys = []struct {
 
 // offerAPIKeys asks for each key no config layer has yet and stores what the
 // user pastes in ~/.claude/.gisx/config.json. DeepSeek is only asked for when
-// the prompt hook is installed, since nothing else uses it. Keys already set
-// anywhere are reported with their source, never printed.
-func offerAPIKeys(projectDir string, hookInstalled bool) {
+// the prompt hook is installed, since nothing else uses it. A key found only
+// in a project file works only in that project, so setup offers to keep a
+// copy for all of them. always (the `keys` command) asks for every key, with
+// Enter keeping the current one. Keys are reported by source, never printed.
+func offerAPIKeys(projectDir string, hookInstalled, always bool) {
 	cfg := loadConfig(projectDir)
 	for _, k := range apiKeys {
-		if k.name == "DEEPSEEK_API_KEY" && !hookInstalled {
+		if k.name == "DEEPSEEK_API_KEY" && !hookInstalled && !always {
 			continue
 		}
-		if _, src := cfg.get(k.name); src != "" {
-			if src == "env" {
-				src = "environment"
-			}
-			step(okMark, k.what+" key", dimGray+"from "+src+reset)
-			continue
-		}
-		val, ok := ask(fmt.Sprintf("  %s API key for %s (Enter to skip): ", k.what, k.where), true)
-		switch {
-		case !ok:
-			step(dotMark, k.what+" key", dimGray+"not set · add "+k.name+" to "+gisxConfigPath()+reset)
-		case val == "":
-			step(dotMark, k.what+" key", dimGray+"skipped"+reset)
-		default:
-			if err := setGisxConfig(k.name, val); err != nil {
-				step(failMark, k.what+" key", dimGray+err.Error()+reset)
+		val, src := cfg.get(k.name)
+		if src != "" && !always {
+			if !projectScoped(src) || globalValue(k.name) == val {
+				step(okMark, k.what+" key", dimGray+"from "+sourceLabel(src)+reset)
 				continue
 			}
-			step(okMark, k.what+" key", dimGray+"saved to "+gisxConfigPath()+reset)
+			yes, ok := askYesNoDefault(fmt.Sprintf("  %s key found in %s, which only applies there.\n"+
+				"  Save it to %s for every project? [Y/n] ", k.what, src, gisxConfigPath()), true)
+			if !ok || !yes {
+				step(dotMark, k.what+" key", dimGray+"from "+src+" · this project only"+reset)
+				continue
+			}
+			saveKey(k.what, k.name, val)
+			continue
+		}
+		prompt := fmt.Sprintf("  %s API key for %s (Enter to skip): ", k.what, k.where)
+		if src != "" {
+			prompt = fmt.Sprintf("  %s API key, now from %s (Enter to keep): ", k.what, sourceLabel(src))
+		}
+		in, ok := ask(prompt, true)
+		switch {
+		case !ok:
+			step(dotMark, k.what+" key", dimGray+"not set · run claude-gisx keys in a terminal"+reset)
+		case in == "" && src != "":
+			step(okMark, k.what+" key", dimGray+"kept · "+sourceLabel(src)+reset)
+		case in == "":
+			step(dotMark, k.what+" key", dimGray+"skipped"+reset)
+		default:
+			saveKey(k.what, k.name, in)
 		}
 	}
+}
+
+func saveKey(what, name, val string) {
+	if err := setGisxConfig(name, val); err != nil {
+		step(failMark, what+" key", dimGray+err.Error()+reset)
+		return
+	}
+	step(okMark, what+" key", dimGray+"saved to "+gisxConfigPath()+reset)
+}
+
+// globalValue is a key's value in the layers that apply to every project,
+// ignoring project files and the environment.
+func globalValue(name string) string {
+	for _, l := range loadConfig("") {
+		if v := l.vars[name]; v != "" {
+			return v
+		}
+	}
+	return ""
+}
+
+// projectScoped reports whether a config source only applies inside one
+// project. The environment and the user-level files apply everywhere.
+func projectScoped(src string) bool {
+	return src != "env" && src != settingsPath() && src != gisxConfigPath()
+}
+
+func sourceLabel(src string) string {
+	if src == "env" {
+		return "environment"
+	}
+	return src
+}
+
+func askYesNoDefault(question string, def bool) (yes, ok bool) {
+	line, ok := ask(question, false)
+	switch strings.ToLower(line) {
+	case "y", "yes":
+		return true, ok
+	case "n", "no":
+		return false, ok
+	}
+	return def, ok
+}
+
+// keysCmd is `claude-gisx keys`: set or replace the API keys at any time.
+func keysCmd() int {
+	banner()
+	cwd, _ := os.Getwd()
+	offerAPIKeys(cwd, hasPromptHook(readSettings()), true)
+	fmt.Println()
+	return 0
 }
 
 // setGisxConfig writes one key into ~/.claude/.gisx/config.json, keeping the
@@ -300,7 +364,7 @@ func hookInstallCmd(choice hookChoice) int {
 		}
 	}
 	cwd, _ := os.Getwd()
-	offerAPIKeys(cwd, hasPromptHook(s))
+	offerAPIKeys(cwd, hasPromptHook(s), false)
 	return 0
 }
 

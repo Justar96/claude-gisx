@@ -47,6 +47,8 @@ func Run(args []string) int {
 			return uninstallCmd(installOpts{force: flags["force"]})
 		case "status":
 			return statusCmd()
+		case "keys":
+			return keysCmd()
 		case "hook":
 			sub := ""
 			if len(pos) > 1 {

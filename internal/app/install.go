@@ -220,7 +220,7 @@ func installCmd(opts installOpts) int {
 	}
 	fmt.Printf("  %s installed\n", okMark)
 	cwd, _ := os.Getwd()
-	offerAPIKeys(cwd, hasPromptHook(s))
+	offerAPIKeys(cwd, hasPromptHook(s), false)
 	fmt.Printf("\n  %srestart Claude Code to apply%s\n\n", dim, reset)
 	return 0
 }

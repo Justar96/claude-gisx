@@ -19,6 +19,7 @@ func helpScreen() {
 		{"uninstall", "restore your previous statusLine"},
 		{"hook install", "add the prompt-rewrite hook and API keys (--yes to skip the question)"},
 		{"hook uninstall", "remove the prompt-rewrite hook"},
+		{"keys", "set or replace the TypeSafe and DeepSeek API keys"},
 		{"help", "this screen"},
 	})
 	section("ENV", []helpItem{

@@ -28,7 +28,7 @@ The installer:
 2. Verifies the SHA-256 checksum if `SHA256SUMS` is published with the release.
 3. Drops the binary at `~/.local/bin/claude-gisx` (Linux/macOS) or `%LOCALAPPDATA%\Programs\claude-gisx\claude-gisx.exe` (Windows).
 4. Runs `claude-gisx setup` to wire it into `~/.claude/settings.json`. Your existing `statusLine` is backed up first. Setup also sets `hideVimModeIndicator` (left alone if you already set it), since the statusline renders the vim mode itself.
-5. Asks `Install the prompt-rewrite hook? [y/N]` and, for any key it can't already find, asks you to paste your TypeSafe and DeepSeek API keys. Input is hidden, and Enter skips. Keys are saved to `~/.claude/.gisx/config.json`, readable only by you. A "no" is remembered, so updates won't ask again. With no terminal (CI, scripts), it skips both questions and prints how to do it later.
+5. Asks `Install the prompt-rewrite hook? [y/N]` and, for any key it can't already find, asks you to paste your TypeSafe and DeepSeek API keys. Input is hidden, and Enter skips. Keys are saved to `~/.claude/.gisx/config.json`, readable only by you. A key found only in a project file (such as that project's `.env`) works only there, so setup offers to copy it for every project. Run `claude-gisx keys` at any time to add or replace keys. A "no" is remembered, so updates won't ask again. With no terminal (CI, scripts), it skips both questions and prints how to do it later.
 
 #### Installer options
 
@@ -71,6 +71,7 @@ $ claude-gisx
 | `claude-gisx update` | Download the latest release, verify its SHA-256 against the published `SHA256SUMS`, and replace the running binary in place. `--check` only reports, `--force` reinstalls the current version. |
 | `claude-gisx uninstall` | Restore the previous `statusLine` (or remove it), and remove the prompt hook. |
 | `claude-gisx hook install` | Offer the prompt-rewrite hook and ask for any missing API keys. `--yes` installs without asking. `setup --hook` / `--no-hook` do the same during setup. `update` runs this with the newly installed binary. |
+| `claude-gisx keys` | Set or replace the TypeSafe and DeepSeek API keys. Input is hidden, and Enter keeps the current key. Keys are saved to `~/.claude/.gisx/config.json`. |
 | `claude-gisx hook uninstall` | Remove the prompt-rewrite hook and leave your other hooks alone. |
 | `claude-gisx help` / `--help` | Help screen. |
 | `claude-gisx version` | Print the binary version. |
@@ -92,7 +93,7 @@ $ claude-gisx
 - **Extra usage** credits display (OAuth accounts)
 - **Vim mode**, **output style**, and **subagent** indicators when active
 - **Next-prompt suggestion** — with `TYPESAFE_API_KEY` set, the third line suggests what to send next once a turn ends: `next ❯ run the tests`. See [Next-prompt suggestion](#next-prompt-suggestion)
-- **Prompt rewrite hook** — `claude-gisx hook prompt` restates unclear prompts with DeepSeek before Claude reads them, or on demand with a `??` prefix. See [Prompt rewrite](#prompt-rewrite)
+- **Prompt rewrite hook** — `claude-gisx hook prompt` restates unclear prompts with DeepSeek before Claude reads them, or on demand with a `rw:` prefix. See [Prompt rewrite](#prompt-rewrite)
 - **Rotating third line** — the fallback when there's no suggestion: **what's new** parsed from Claude Code's own changelog cache (`~/.claude/cache/changelog.md`, feature entries only — fixes and links are skipped), plus **usage nudges**: `weekly 65% used · /usage-credits raise your weekly limit` past 50%. All local, no network. Warnings (auto-compact, rate limit) take the line 2 renders out of 3 — they stay true for hours, so they yield every third render instead of blocking the rotation outright
 - **Update notice** — when a newer release exists, the third line says so in a drifting red-to-pink tint: `✦ claude-gisx v1.2.2 available · claude-gisx update`. GitHub is checked at most once every 6 hours (cached in the temp dir, 1.5s timeout, silent on failure). Dev builds never nag; set `CLAUDE_GISX_NO_UPDATE_CHECK=1` to disable entirely
 - **Third-line plugin** — point `CLAUDE_GISX_PLUGIN` at any shell command (including `curl` against your own API) and its stdout becomes the third line. Timeout + caching are built in. See [Third-line plugin](#third-line-plugin)
@@ -220,16 +221,16 @@ Each of these settings can be an environment variable or an entry in a config fi
 
 The statusline's third line shows `rewrote ❯ …` while the turn runs, so you can see what Claude was given. Slash commands, `!` shell escapes, replies shorter than four words, pasted content, and prompts containing code blocks are never rewritten. Without a TypeSafe key, every other prompt is rewritten and nothing is checked.
 
-**Trigger.** A prompt that starts with `??` isn't sent. The hook shows the rewrite instead and copies it to your clipboard (`clip.exe` on Windows and WSL, `pbcopy`, `wl-copy`, `xclip`, or `xsel`). Paste it to send it.
+**Trigger.** A prompt that starts with `rw:` (any letter case) isn't sent. The hook shows the rewrite instead and copies it to your clipboard (`clip.exe` on Windows and WSL, `pbcopy`, `wl-copy`, `xclip`, or `xsel`). Paste it to send it.
 
 ```
-> ?? fix bug where statusline it show wrong branch when worktree
+> rw: fix bug where statusline it show wrong branch when worktree
   ✦ rewritten, copied to your clipboard, paste it to send:
 
   Fix the bug where the statusline shows the wrong branch when using a worktree.
 ```
 
-If anything fails or times out, the prompt goes through unchanged. The one exception is a failed `??` rewrite: that prompt is blocked with the error, since sending it as typed isn't what you asked for.
+If anything fails or times out, the prompt goes through unchanged. The one exception is a failed `rw:` rewrite: that prompt is blocked with the error, since sending it as typed isn't what you asked for.
 
 Privacy: the prompts it rewrites are sent to DeepSeek, and with a TypeSafe key every prompt eligible for auto mode is also sent to TypeSafe for scoring.
 
@@ -248,8 +249,8 @@ Privacy: the prompts it rewrites are sent to DeepSeek, and with a TypeSafe key e
 | Setting | Default | Description |
 |---------|---------|-------------|
 | `DEEPSEEK_API_KEY` | _(unset)_ | Required; the hook does nothing without it. It's read from the same places as the other keys, including `<project>/.env`. |
-| `CLAUDE_GISX_REWRITE_AUTO` | on | Set to `off` to keep only the `??` trigger. |
-| `CLAUDE_GISX_REWRITE_TRIGGER` | `??` | Prefix that asks for a rewrite you review yourself. |
+| `CLAUDE_GISX_REWRITE_AUTO` | on | Set to `off` to keep only the `rw:` trigger. |
+| `CLAUDE_GISX_REWRITE_TRIGGER` | `rw:` | Prefix that asks for a rewrite you review yourself. It can't start with `?`, because Claude Code opens its shortcut help when `?` is typed into an empty prompt. |
 | `CLAUDE_GISX_REWRITE_BELOW` | `1.5` | Auto mode rewrites prompts with a clarity score below this. The scale runs from 0 (hard to act on) to 2 (clear). |
 | `CLAUDE_GISX_REWRITE_TIMEOUT` | `8` | Seconds allowed for each API call. |
 | `CLAUDE_GISX_REWRITE_MODEL` | `deepseek-flash` | DeepSeek model. |

@@ -22,7 +22,7 @@ import (
 //   - auto: when TypeSafe rates a prompt hard to read, DeepSeek rewrites it,
 //     TypeSafe checks the rewrite still asks for the same thing, and the
 //     result goes to Claude as additionalContext next to the original.
-//   - trigger: a prompt starting with "??" is blocked instead of sent, and the
+//   - trigger: a prompt starting with "rw:" is blocked instead of sent, and the
 //     rewrite is shown and copied to the clipboard for you to paste and send.
 //
 // Every failure lets the prompt through untouched: a hook that errors or
@@ -47,7 +47,9 @@ type hookSpecificOut struct {
 }
 
 const (
-	defaultRewriteTrigger = "??"
+	// Not "??": Claude Code opens its shortcut help on a "?" typed into an
+	// empty prompt, so a prompt can never start with one.
+	defaultRewriteTrigger = "rw:"
 	defaultRewriteModel   = "deepseek-flash"
 	defaultRewriteTimeout = 8 * time.Second
 	defaultRewriteBelow   = 1.5 // clarity score (0–2) under which auto mode rewrites
@@ -87,7 +89,7 @@ func handlePrompt(ctx context.Context, cfg gisxConfig, in promptHookInput) *prom
 	if trigger == "" {
 		trigger = defaultRewriteTrigger
 	}
-	if rest, ok := strings.CutPrefix(strings.TrimSpace(in.Prompt), trigger); ok {
+	if rest, ok := cutPrefixFold(strings.TrimSpace(in.Prompt), trigger); ok {
 		return triggeredRewrite(ctx, cfg, dsKey, strings.TrimSpace(rest))
 	}
 
@@ -123,7 +125,7 @@ func handlePrompt(ctx context.Context, cfg gisxConfig, in promptHookInput) *prom
 }
 
 // triggeredRewrite blocks the prompt and hands the rewrite back to the user.
-// The block is deliberate either way: sending "?? fix it" to Claude as is
+// The block is deliberate either way: sending "rw: fix it" to Claude as is
 // would be the one outcome nobody asked for.
 func triggeredRewrite(ctx context.Context, cfg gisxConfig, dsKey, text string) *promptHookOutput {
 	if text == "" {
@@ -146,6 +148,14 @@ func triggeredRewrite(ctx context.Context, cfg gisxConfig, dsKey, text string) *
 		Reason:                 "✦ rewritten, " + how + ":\n\n" + rewritten,
 		SuppressOriginalPrompt: true,
 	}
+}
+
+// cutPrefixFold is strings.CutPrefix ignoring case, so "RW:" works too.
+func cutPrefixFold(s, prefix string) (string, bool) {
+	if len(s) >= len(prefix) && strings.EqualFold(s[:len(prefix)], prefix) {
+		return s[len(prefix):], true
+	}
+	return s, false
 }
 
 // worthRewriting skips what a rewrite would only damage or can't improve:

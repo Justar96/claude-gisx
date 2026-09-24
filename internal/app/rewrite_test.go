@@ -144,7 +144,7 @@ func TestTriggerBlocksAndShowsRewrite(t *testing.T) {
 	f := &fakeAPIs{clarity: 2, same: 1, rewrite: "Add a --dry-run flag to main.go."}
 	f.serve(t)
 
-	out := hook(t, "?? add dry run flag main.go", "")
+	out := hook(t, "rw: add dry run flag main.go", "")
 	if out == nil || out.Decision != "block" || !out.SuppressOriginalPrompt {
 		t.Fatalf("expected a block, got %+v", out)
 	}
@@ -161,7 +161,7 @@ func TestTriggerFailureKeepsOriginalVisible(t *testing.T) {
 	f := &fakeAPIs{}
 	f.serve(t)
 	t.Setenv("DEEPSEEK_API_KEY", "wrong")
-	out := hook(t, "?? add dry run flag", "")
+	out := hook(t, "RW: add dry run flag", "")
 	if out == nil || out.Decision != "block" || out.SuppressOriginalPrompt || !strings.Contains(out.Reason, "not sent") {
 		t.Fatalf("got %+v", out)
 	}
@@ -170,7 +170,7 @@ func TestTriggerFailureKeepsOriginalVisible(t *testing.T) {
 func TestNoDeepSeekKeyPassesThrough(t *testing.T) {
 	isolateHome(t)
 	t.Setenv("DEEPSEEK_API_KEY", "")
-	if out := hook(t, "?? anything at all here", ""); out != nil {
+	if out := hook(t, "rw: anything at all here", ""); out != nil {
 		t.Fatalf("got %+v", out)
 	}
 }
