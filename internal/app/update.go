@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strconv"
@@ -240,6 +241,11 @@ func updateCmd(opts installOpts, checkOnly bool) int {
 		return 1
 	}
 	step(okMark, "installed", dimGray+self+reset)
+	// The offer comes from the binary just installed, so a release that adds
+	// something to offer gets to ask about it on the update that brings it.
+	next := exec.Command(self, "hook", "install")
+	next.Stdin, next.Stdout, next.Stderr = os.Stdin, os.Stdout, os.Stderr
+	_ = next.Run()
 	fmt.Printf("\n  %srestart Claude Code to pick it up%s\n\n", dim, reset)
 	return 0
 }

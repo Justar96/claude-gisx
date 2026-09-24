@@ -12,6 +12,8 @@ type tipContext struct {
 	weekPct  int // 7-day bucket
 	compact  compactState
 	plugin   string
+	suggest  string // catalog key of the next prompt to suggest, if any
+	rewrite  string // what the prompt hook restated the current prompt as
 	update   string // newer release tag, if the cached check found one
 }
 
@@ -34,6 +36,16 @@ func tipLine(t tipContext) string {
 	if t.plugin != "" {
 		return t.plugin
 	}
+	// What to type next is the most useful thing the line can say once a
+	// turn has ended, so it outranks the update notice and the rotation.
+	if s := paintSuggestion(t.suggest); s != "" {
+		return s
+	}
+	// While a turn runs there's no suggestion yet; what Claude was actually
+	// handed is the more useful thing to see then.
+	if s := paintRewrite(t.rewrite); s != "" {
+		return s
+	}
 	// Rare and actionable, so it outranks the rotation — but not the warnings
 	// above, and not a user's own plugin line.
 	if tag := t.update; tag != "" {
@@ -43,6 +55,9 @@ func tipLine(t tipContext) string {
 
 	pool := whatsNew()
 	if p := usagePromo(t.weekPct); p != "" {
+		pool = append(pool, p)
+	}
+	if p := promptHookNudge(); p != "" {
 		pool = append(pool, p)
 	}
 	if len(pool) == 0 {

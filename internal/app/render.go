@@ -18,7 +18,6 @@ type sessionInput struct {
 	Workspace     *workspaceInfo `json:"workspace,omitempty"`
 	Cwd           string         `json:"cwd,omitempty"`
 	ContextWindow *contextInfo   `json:"context_window,omitempty"`
-	Exceeds200k   bool           `json:"exceeds_200k_tokens,omitempty"`
 	Cost          *costInfo      `json:"cost,omitempty"`
 	Effort        *levelInfo     `json:"effort,omitempty"`
 	FastMode      bool           `json:"fast_mode,omitempty"`
@@ -107,7 +106,7 @@ func renderStatusline(stdinJSON string) {
 
 	modelName := "Claude"
 	if data.Model != nil && data.Model.DisplayName != "" {
-		modelName = data.Model.DisplayName
+		modelName = shortModelName(data.Model.DisplayName)
 	}
 	pctUsed := 0
 	if data.ContextWindow != nil && data.ContextWindow.UsedPercentage != nil {
@@ -134,8 +133,6 @@ func renderStatusline(stdinJSON string) {
 		durationMs = data.Cost.TotalDurationMS
 		costUsd = data.Cost.TotalCostUSD
 	}
-	has1M := ctxSize > 200_000
-
 	// `effort` is only sent for models that support it — absent means the
 	// model has no effort dial, so don't invent one from settings.
 	effortLevel := ""
@@ -153,14 +150,34 @@ func renderStatusline(stdinJSON string) {
 		tk        tokenTotals
 		pluginOut string
 		updateTag string
+		nextKey   string
+		rewritten string
 		wg        sync.WaitGroup
+		gitDone   = make(chan struct{})
 	)
-	wg.Add(5)
-	go func() { defer wg.Done(); g = gitInfo(cwd) }()
+	wg.Add(6)
+	go func() { defer wg.Done(); g = gitInfo(cwd); close(gitDone) }()
 	go func() { defer wg.Done(); u = fetchUsage(context.Background()) }()
 	go func() { defer wg.Done(); tk = sessionTokens(data.Transcript) }()
 	go func() { defer wg.Done(); pluginOut = runPlugin(stdinJSON) }()
 	go func() { defer wg.Done(); updateTag = availableUpdate(6 * time.Hour) }()
+	// Waits on git only for the facts it sends along; the transcript read and
+	// the cache check are what it spends its time on.
+	go func() {
+		defer wg.Done()
+		<-gitDone
+		w := workspaceFacts{Branch: g.branch, UncommittedChanges: g.dirty != "", ContextUsedPercent: pctUsed,
+			OpenPullRequest: data.PR != nil && data.PR.Number > 0}
+		if data.Cost != nil {
+			w.LinesAdded, w.LinesRemoved = data.Cost.LinesAdded, data.Cost.LinesRemoved
+		}
+		projectDir := cwd
+		if data.Workspace != nil && data.Workspace.ProjectDir != "" {
+			projectDir = data.Workspace.ProjectDir
+		}
+		nextKey = nextPrompt(data.Transcript, projectDir, w)
+		rewritten = lastRewrite(data.Transcript)
+	}()
 
 	cs := computeCompactState(ctxSize)
 	dir := filepath.Base(cwd)
@@ -172,7 +189,7 @@ func renderStatusline(stdinJSON string) {
 	var L strings.Builder
 	L.WriteString(bold + blue + modelName + reset)
 	if effortLevel != "" {
-		L.WriteString(" " + dimGray + "effort" + reset + " " + effortColor(effortLevel) + effortLevel + reset)
+		L.WriteString(dim + "/" + reset + effortColor(effortLevel) + effortLevel + reset)
 	}
 	if data.FastMode {
 		// A word, not an emoji — emoji widths vary per terminal and shift the line.
@@ -186,15 +203,6 @@ func renderStatusline(stdinJSON string) {
 	}
 	if cs.off {
 		L.WriteString(" " + dimGray + "compact:off" + reset)
-	}
-	if has1M && data.Exceeds200k {
-		L.WriteString(" " + dimGray + "+ext" + reset)
-	}
-	// Sits with the context bar rather than on the usage line: both are
-	// "how much am I burning", and line 2 only renders when there are quotas
-	// to report, which a fresh session doesn't have yet.
-	if trend != "" {
-		L.WriteString(sep + trend)
 	}
 
 	L.WriteString(sep + cyan + dir + reset)
@@ -210,7 +218,9 @@ func renderStatusline(stdinJSON string) {
 	if wt == "" && data.Workspace != nil {
 		wt = data.Workspace.GitWorktree
 	}
-	if wt != "" {
+	// A worktree named after its branch or directory says nothing the
+	// dir:branch segment didn't.
+	if wt != "" && wt != g.branch && wt != dir {
 		L.WriteString(sep + magenta + "⌥ " + wt + reset)
 	}
 	// Only a name someone chose or Claude generated — never the random
@@ -308,6 +318,14 @@ func renderStatusline(stdinJSON string) {
 		}
 		R.WriteString(s)
 	}
+	// The day's burn against the week's average: the same question as the
+	// session totals just before it, over a longer span.
+	if trend != "" {
+		if R.Len() > 0 {
+			R.WriteString(sep)
+		}
+		R.WriteString(trend)
+	}
 
 	// Dollars close the line — the one figure here that isn't a percentage.
 	if u != nil && u.Extra != nil {
@@ -318,13 +336,15 @@ func renderStatusline(stdinJSON string) {
 			dimGray + "/" + reset + white + "$" + u.Extra.Limit + reset)
 	}
 
-	// ── Line 3: plugin output or built-in tip ─────────────────────────────
+	// ── Line 3: warnings, plugin, next-prompt suggestion, or a tip ────────
 	T := tipLine(tipContext{
 		ctxPct:   pctUsed,
 		limitPct: limitPct,
 		weekPct:  weekPct,
 		compact:  cs,
 		plugin:   pluginOut,
+		suggest:  nextKey,
+		rewrite:  rewritten,
 		update:   updateTag,
 	})
 
@@ -354,6 +374,15 @@ func writeBucket(b *strings.Builder, name string, pct int, resetsAt int64, stale
 	if t := fmtRemaining(resetsAt); t != "" {
 		b.WriteString(" " + dimGray + "resets" + reset + " " + left + t + reset)
 	}
+}
+
+// shortModelName drops a "(1M context)" style suffix — the context bar's
+// "/1M" label already says it.
+func shortModelName(name string) string {
+	if i := strings.LastIndex(name, " ("); i > 0 && strings.HasSuffix(name, "context)") {
+		return name[:i]
+	}
+	return name
 }
 
 // truncate cuts s to at most n runes, ending in an ellipsis when it had to.

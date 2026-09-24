@@ -125,7 +125,12 @@ if (-not $SkipSetup) {
     Write-Step "running 'claude-gisx setup'..."
     # --force so reinstalling refreshes settings.json with the current binary's
     # command path (e.g. when upgrading from a version that wrote a bare name).
-    & $dest setup --force
+    $hookFlag = @()
+    switch -Regex ("$env:CLAUDE_GISX_HOOK") {
+        '^(y|yes|1|true)$'  { $hookFlag = @('--hook') }
+        '^(n|no|0|false)$'  { $hookFlag = @('--no-hook') }
+    }
+    & $dest setup --force @hookFlag
     if ($LASTEXITCODE -ne 0) {
         Write-Err "setup failed — run '$dest setup' manually"
         exit 4

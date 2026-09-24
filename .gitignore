@@ -15,3 +15,7 @@ dist/
 *.jpg
 *.jpeg
 *.gif
+
+# local secrets
+.env
+.env.*

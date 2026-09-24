@@ -39,6 +39,7 @@ func Run(args []string) int {
 			return installCmd(installOpts{
 				force:   flags["force"],
 				noCheck: flags["no-check"],
+				hook:    hookChoiceFrom(flags),
 			})
 		case "update":
 			return updateCmd(installOpts{force: flags["force"]}, flags["check"])
@@ -46,6 +47,22 @@ func Run(args []string) int {
 			return uninstallCmd(installOpts{force: flags["force"]})
 		case "status":
 			return statusCmd()
+		case "hook":
+			sub := ""
+			if len(pos) > 1 {
+				sub = pos[1]
+			}
+			switch sub {
+			case "prompt":
+				// Claude Code runs this with the hook payload on stdin.
+				return promptHookCmd(os.Stdin, os.Stdout)
+			case "install":
+				return hookInstallCmd(hookChoiceFrom(flags))
+			case "uninstall":
+				return hookUninstallCmd()
+			}
+			fmt.Fprintln(os.Stderr, "usage: claude-gisx hook install [--yes] | uninstall | prompt")
+			return 1
 		default:
 			fmt.Fprintf(os.Stderr, "unknown command: %s\n", cmd)
 			fmt.Fprintln(os.Stderr, "run 'claude-gisx help' for usage")

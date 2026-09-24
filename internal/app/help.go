@@ -17,6 +17,8 @@ func helpScreen() {
 		{"status", "show install state and backup"},
 		{"update", "download the latest release (--check to only look)"},
 		{"uninstall", "restore your previous statusLine"},
+		{"hook install", "add the prompt-rewrite hook and API keys (--yes to skip the question)"},
+		{"hook uninstall", "remove the prompt-rewrite hook"},
 		{"help", "this screen"},
 	})
 	section("ENV", []helpItem{

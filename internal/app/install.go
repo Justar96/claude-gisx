@@ -27,6 +27,7 @@ var (
 type installOpts struct {
 	force   bool
 	noCheck bool
+	hook    hookChoice
 }
 
 // The mark is drawn from the same heavy box-drawing family as the statusline's
@@ -72,11 +73,10 @@ func stateBadge(state string) string {
 
 func preview() {
 	fmt.Printf("  %spreview%s\n", dimGray, reset)
-	fmt.Printf("  %s%sClaude Opus 4.8%s%s/%s%shigh%s %s %s██%s██%s%s░░░░░░░░░░░%s %s28%%%s%s/%s%s1M%s %s+ext%s %s %sclaude-gisx%s%s:%s%smain%s %s %s12m%s %s %s$1.20%s\n",
+	fmt.Printf("  %s%sOpus 4.8%s%s/%s%shigh%s %s %s██%s██%s%s░░░░░░░░░░░%s %s28%%%s%s/%s%s1M%s %s %sclaude-gisx%s%s:%s%smain%s %s %s12m%s %s %s$1.20%s\n",
 		bold, blue, reset, dim, reset, cyan, reset, dotMark,
 		green, cyan, reset, dimGray, reset,
 		green, reset, dim, reset, dimGray, reset,
-		dimGray, reset,
 		dotMark, cyan, reset, dim, reset, green, reset,
 		dotMark, white, reset,
 		dotMark, white, reset,
@@ -158,8 +158,10 @@ func installCmd(opts installOpts) int {
 
 	if isOurs(s) && !opts.force {
 		fmt.Printf("  %s already active\n", okMark)
-		fmt.Printf("  %s--force to reinstall, status to inspect%s\n\n", dim, reset)
-		return 0
+		// Re-running setup is how you add the hook or keys you skipped.
+		code := hookInstallCmd(opts.hook)
+		fmt.Printf("\n  %s--force to reinstall, status to inspect%s\n\n", dim, reset)
+		return code
 	}
 
 	if !opts.noCheck {
@@ -193,12 +195,7 @@ func installCmd(opts installOpts) int {
 	// the binary launches but stdout disappears. Forward slashes work in both
 	// shells and in Windows native CreateProcess. Linux/macOS keep the bare
 	// name so PATH does the work.
-	command := "claude-gisx"
-	if runtime.GOOS == "windows" {
-		if exe, err := os.Executable(); err == nil {
-			command = strings.ReplaceAll(exe, `\`, "/")
-		}
-	}
+	command := selfCommand()
 	// Preserve any extra keys (e.g. statusLine.padding) the user added to our
 	// entry. We only overwrite the two fields we actually own.
 	var sl map[string]any
@@ -216,11 +213,14 @@ func installCmd(opts installOpts) int {
 		sl["hideVimModeIndicator"] = true
 	}
 	s["statusLine"] = sl
+	offerPromptHook(s, opts.hook)
 	if err := writeJSONFile(settingsPath(), s); err != nil {
 		fmt.Fprintf(os.Stderr, "  %s write failed: %v\n", failMark, err)
 		return 1
 	}
 	fmt.Printf("  %s installed\n", okMark)
+	cwd, _ := os.Getwd()
+	offerAPIKeys(cwd, hasPromptHook(s))
 	fmt.Printf("\n  %srestart Claude Code to apply%s\n\n", dim, reset)
 	return 0
 }
@@ -237,6 +237,9 @@ func uninstallCmd(opts installOpts) int {
 		fmt.Printf("  %s statusLine belongs to: %s\n", failMark, jsonStr(sl))
 		fmt.Printf("  %spass --force to override%s\n", dim, reset)
 		return 1
+	}
+	if removePromptHook(s) {
+		fmt.Printf("  %s removed the prompt hook\n", okMark)
 	}
 	prev := loadPrev()
 	if prev.Found && prev.Had {
@@ -287,6 +290,21 @@ func statusCmd() int {
 	}
 	if _, err := os.Stat(backupFullPath()); err == nil {
 		row("snapshot", dim+backupFullPath()+reset)
+	}
+	if hasPromptHook(s) {
+		row("hook", okMark+" prompt rewrite")
+	} else {
+		row("hook", dim+"none  claude-gisx hook install"+reset)
+	}
+	// Run from a project to see its .claude/ files counted too.
+	cwd, _ := os.Getwd()
+	switch _, src := loadConfig(cwd).get("TYPESAFE_API_KEY"); src {
+	case "":
+		row("suggest", dim+"off  set TYPESAFE_API_KEY to enable"+reset)
+	case "env":
+		row("suggest", okMark+" on  "+dim+"key from environment"+reset)
+	default:
+		row("suggest", okMark+" on  "+dim+"key from "+src+reset)
 	}
 	fmt.Println()
 	return 0

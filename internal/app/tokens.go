@@ -135,8 +135,9 @@ func saveTokenCache(transcriptPath string, c *tokenCache, fresh bool) {
 	_ = writeFileAtomic(tokenCachePath(transcriptPath), raw)
 }
 
-// These are per-session and nothing ever deletes the session, so without a
-// sweep the cache dir grows a small file per conversation forever.
+// These, the suggestion and the rewrite caches are per-session and nothing ever deletes
+// the session, so without a sweep the cache dir grows a small file per
+// conversation forever.
 const tokenCacheTTL = 14 * 24 * time.Hour
 
 func pruneTokenCaches() {
@@ -145,14 +146,16 @@ func pruneTokenCaches() {
 		return
 	}
 	for _, e := range ents {
-		if e.IsDir() || !strings.HasPrefix(e.Name(), "statusline-tokens-") {
+		name := e.Name()
+		if e.IsDir() || !(strings.HasPrefix(name, "statusline-tokens-") ||
+			strings.HasPrefix(name, "statusline-suggest-") || strings.HasPrefix(name, "statusline-rewrite-")) {
 			continue
 		}
 		info, err := e.Info()
 		if err != nil || time.Since(info.ModTime()) < tokenCacheTTL {
 			continue
 		}
-		_ = os.Remove(filepath.Join(lineCacheDir(), e.Name()))
+		_ = os.Remove(filepath.Join(lineCacheDir(), name))
 	}
 }
 
