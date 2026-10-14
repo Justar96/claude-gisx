@@ -39,7 +39,6 @@ func Run(args []string) int {
 			return installCmd(installOpts{
 				force:   flags["force"],
 				noCheck: flags["no-check"],
-				hook:    hookChoiceFrom(flags),
 			})
 		case "update":
 			return updateCmd(installOpts{force: flags["force"]}, flags["check"])
@@ -47,24 +46,20 @@ func Run(args []string) int {
 			return uninstallCmd(installOpts{force: flags["force"]})
 		case "status":
 			return statusCmd()
-		case "keys":
-			return keysCmd()
+		case "refresh":
+			// Started detached by a render whose cache went stale.
+			if len(pos) < 2 {
+				return 1
+			}
+			return refreshCmd(pos[1])
 		case "hook":
-			sub := ""
-			if len(pos) > 1 {
-				sub = pos[1]
+			// Only reached from installs that predate the hook's removal: the
+			// stale `hook prompt` entry must not fail every prompt, and an older
+			// `update` runs `hook install` on this binary.
+			if len(pos) > 1 && pos[1] == "prompt" {
+				return 0
 			}
-			switch sub {
-			case "prompt":
-				// Claude Code runs this with the hook payload on stdin.
-				return promptHookCmd(os.Stdin, os.Stdout)
-			case "install":
-				return hookInstallCmd(hookChoiceFrom(flags))
-			case "uninstall":
-				return hookUninstallCmd()
-			}
-			fmt.Fprintln(os.Stderr, "usage: claude-gisx hook install [--yes] | uninstall | prompt")
-			return 1
+			return cleanupLegacy()
 		default:
 			fmt.Fprintf(os.Stderr, "unknown command: %s\n", cmd)
 			fmt.Fprintln(os.Stderr, "run 'claude-gisx help' for usage")

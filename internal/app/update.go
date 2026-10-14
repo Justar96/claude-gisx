@@ -9,7 +9,6 @@ import (
 	"io"
 	"net/http"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strconv"
@@ -102,41 +101,22 @@ type updateCache struct {
 
 func updateCachePath() string { return filepath.Join(cacheDir(), "gisx-update-cache.json") }
 
-// availableUpdate returns a newer release tag, or "" — cached so the
-// statusline hits the network at most once per interval. Dev builds never
+// availableUpdate returns a newer release tag, or "" — from the cache only.
+// Once the last check is older than maxAge a detached `refresh update` asks
+// GitHub again, keyed on when we checked rather than whether we got a tag, so
+// an offline machine records the miss and stops retrying. Dev builds never
 // nag: there's no meaningful version to compare against.
 func availableUpdate(maxAge time.Duration) string {
 	if Version == "dev" || os.Getenv("CLAUDE_GISX_NO_UPDATE_CHECK") != "" {
 		return ""
 	}
-	tag := ""
-	checked := false
-	if raw, err := os.ReadFile(updateCachePath()); err == nil {
-		var c updateCache
-		if json.Unmarshal(raw, &c) == nil {
-			if time.Since(time.Unix(c.CheckedAt, 0)) < maxAge {
-				tag, checked = c.Tag, true
-			}
-		}
+	var c updateCache
+	raw, err := os.ReadFile(updateCachePath())
+	if err != nil || json.Unmarshal(raw, &c) != nil || time.Since(time.Unix(c.CheckedAt, 0)) >= maxAge {
+		startRefresh("update")
 	}
-	// Keyed on "did we check recently", not "do we have a tag" — an offline
-	// machine has no tag to show and would otherwise re-dial GitHub on every
-	// single render, paying the full timeout each time. Recording the failed
-	// attempt makes the next renders fall straight through.
-	if !checked {
-		fetched, err := latestTag(context.Background(), 1500*time.Millisecond)
-		if err != nil {
-			writeUpdateCache("")
-			return ""
-		}
-		writeUpdateCache(fetched)
-		tag = fetched
-	}
-	if tag == "" {
-		return ""
-	}
-	if newerThan(tag, Version) {
-		return tag
+	if c.Tag != "" && newerThan(c.Tag, Version) {
+		return c.Tag
 	}
 	return ""
 }
@@ -241,11 +221,7 @@ func updateCmd(opts installOpts, checkOnly bool) int {
 		return 1
 	}
 	step(okMark, "installed", dimGray+self+reset)
-	// The offer comes from the binary just installed, so a release that adds
-	// something to offer gets to ask about it on the update that brings it.
-	next := exec.Command(self, "hook", "install")
-	next.Stdin, next.Stdout, next.Stderr = os.Stdin, os.Stdout, os.Stderr
-	_ = next.Run()
+	cleanupLegacy()
 	fmt.Printf("\n  %srestart Claude Code to pick it up%s\n\n", dim, reset)
 	return 0
 }

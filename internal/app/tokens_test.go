@@ -7,6 +7,7 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+	"time"
 )
 
 // entry writes one assistant line in the transcript's shape. Two entries with
@@ -108,43 +109,43 @@ func TestSessionTokensMissingTranscript(t *testing.T) {
 var ansiRe = regexp.MustCompile(`\x1b\[[0-9;]*m`)
 
 func TestPaintTokens(t *testing.T) {
-	if got := paintTokens(tokenTotals{}, nil); got != "" {
+	now := time.Unix(1_000_000, 0)
+	if got := paintTokens(tokenTotals{}, nil, now); got != "" {
 		t.Errorf("no input should render nothing, got %q", got)
 	}
-	got := ansiRe.ReplaceAllString(paintTokens(tokenTotals{Input: 2_000, Write: 8_000, Read: 990_000, Output: 34_000}, nil), "")
-	want := "cache 99% · in 1.0M · out 34.0k"
+	// Older Claude Code: no prompt_cache, so the transcript supplies the ratio.
+	got := ansiRe.ReplaceAllString(paintTokens(tokenTotals{Input: 2_000, Write: 8_000, Read: 990_000, Output: 34_000}, nil, now), "")
+	want := "cache hit 99% · in 1.0M (990.0k read, 8.0k write, 2.0k uncached) · out 34.0k"
 	if got != want {
 		t.Errorf("paintTokens = %q, want %q", got, want)
 	}
 }
 
-// With prompt_cache in the payload, Claude Code's own hit ratio is the one to
-// show — it covers exactly the main conversation — while the transcript still
-// supplies the in/out totals the payload lacks.
-func TestPaintTokensPrefersPayloadCache(t *testing.T) {
+// With prompt_cache in the payload, Claude Code's own hit ratio and cache
+// state are the ones to show, while the transcript still supplies the token
+// split the payload lacks.
+func TestPaintTokensPayloadCache(t *testing.T) {
+	now := time.Unix(1_000_000, 0)
 	ratio := 0.42
-	pc := &promptCache{Warm: false, CachingObserved: true, HitRatio: &ratio, Misses: 3}
-	got := ansiRe.ReplaceAllString(paintTokens(tokenTotals{Input: 500, Read: 500, Output: 10}, pc), "")
-	want := "cache 42% cold 3 miss · in 1.0k · out 10"
-	if got != want {
-		t.Errorf("got %q, want %q", got, want)
+	recache := int64(45_000)
+	cases := []struct {
+		name string
+		tk   tokenTotals
+		pc   promptCache
+		want string
+	}{
+		{"warm with time left", tokenTotals{Input: 500, Read: 500, Output: 10},
+			promptCache{Warm: true, CachingObserved: true, TTL: "1h", ExpiresAt: now.Unix() + 240, HitRatio: &ratio, Misses: 1},
+			"cache warm 4m of 1h left · hit 42% 1 miss · in 1.0k (500 read, 0 write, 500 uncached) · out 10"},
+		{"cold with a recache cost", tokenTotals{},
+			promptCache{CachingObserved: true, TTL: "5m", HitRatio: &ratio, Misses: 3, RecacheIfCold: &recache},
+			"cache cold recache 45.0k · hit 42% 3 misses"},
+		{"caching never observed", tokenTotals{}, promptCache{}, "cache off"},
 	}
-	// A payload ratio alone (no transcript yet) still renders the rate.
-	got = ansiRe.ReplaceAllString(paintTokens(tokenTotals{}, &promptCache{Warm: true, CachingObserved: true, HitRatio: &ratio}), "")
-	if got != "cache 42%" {
-		t.Errorf("payload-only: got %q", got)
-	}
-	// A null hit_ratio with an empty transcript has nothing to say.
-	if got := paintTokens(tokenTotals{}, &promptCache{}); got != "" {
-		t.Errorf("null ratio: got %q, want empty", got)
-	}
-}
-
-func TestTruncate(t *testing.T) {
-	if got := truncate("short", 10); got != "short" {
-		t.Errorf("got %q", got)
-	}
-	if got := truncate("a fairly long session title", 10); got != "a fairly…" {
-		t.Errorf("got %q", got)
+	for _, c := range cases {
+		pc := c.pc
+		if got := ansiRe.ReplaceAllString(paintTokens(c.tk, &pc, now), ""); got != c.want {
+			t.Errorf("%s:\n got %q\nwant %q", c.name, got, c.want)
+		}
 	}
 }

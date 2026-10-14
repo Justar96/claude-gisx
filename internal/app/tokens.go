@@ -135,20 +135,21 @@ func saveTokenCache(transcriptPath string, c *tokenCache, fresh bool) {
 	_ = writeFileAtomic(tokenCachePath(transcriptPath), raw)
 }
 
-// These, the suggestion and the rewrite caches are per-session and nothing ever deletes
+// Token caches are per-session and nothing ever deletes
 // the session, so without a sweep the cache dir grows a small file per
 // conversation forever.
 const tokenCacheTTL = 14 * 24 * time.Hour
 
 func pruneTokenCaches() {
+	sweepStaleTemps(lineCacheDir())
+	sweepStaleTemps(cacheDir())
 	ents, err := os.ReadDir(lineCacheDir())
 	if err != nil {
 		return
 	}
 	for _, e := range ents {
 		name := e.Name()
-		if e.IsDir() || !(strings.HasPrefix(name, "statusline-tokens-") ||
-			strings.HasPrefix(name, "statusline-suggest-") || strings.HasPrefix(name, "statusline-rewrite-")) {
+		if e.IsDir() || !strings.HasPrefix(name, "statusline-tokens-") {
 			continue
 		}
 		info, err := e.Info()
@@ -159,17 +160,17 @@ func pruneTokenCaches() {
 	}
 }
 
-// paintTokens renders "cache 96% · in 1.2M · out 34k": what share of this
-// session's input came off the prompt cache, and the totals it's a share of.
-// `in` is everything the API charged as input, cached or not, so it counts the
-// same cached prefix once per request — which is exactly how it's billed.
+// paintTokens renders the session's prompt cache in the terms Anthropic's
+// docs use, state first and token counts after:
 //
-// The hit rate comes from the payload's prompt_cache when Claude Code sends
-// one (v2.1.251+) — it's the same figure /usage shows — and from the transcript
-// sum on older versions. "cold" means the cached prefix has aged out and the
-// next request pays to rebuild it; a miss count is a prefix that was
-// invalidated with no compaction to explain it.
-func paintTokens(t tokenTotals, pc *promptCache) string {
+//	cache warm 4m of 1h left · hit 93% · 2 misses · in 1.5M (1.4M read, 80k write, 2.0k uncached) · out 15.1k
+//
+// warm/cold, the TTL, the hit ratio and misses come from the payload's
+// prompt_cache (Claude Code v2.1.251+, the figures /usage shows). Older
+// versions get the hit ratio from the transcript sum and no state. `in` is
+// total input — cache reads + cache writes + uncached input — so it counts
+// the cached prefix once per request, exactly as it's billed.
+func paintTokens(t tokenTotals, pc *promptCache, now time.Time) string {
 	in := t.Input + t.Write + t.Read
 	hit := -1
 	switch {
@@ -178,20 +179,62 @@ func paintTokens(t tokenTotals, pc *promptCache) string {
 	case in > 0:
 		hit = int(t.Read * 100 / in)
 	}
-	if hit < 0 {
-		return ""
+
+	var parts []string
+	label := white + "cache" + reset + " "
+	if state := cacheState(pc, now); state != "" {
+		parts = append(parts, label+state)
+		label = ""
 	}
-	var b strings.Builder
-	b.WriteString(white + "cache" + reset + " " + cacheColor(hit) + fmt.Sprintf("%d%%", hit) + reset)
-	if pc != nil && pc.CachingObserved && !pc.Warm {
-		b.WriteString(" " + dimGray + "cold" + reset)
-	}
-	if pc != nil && pc.Misses > 0 {
-		b.WriteString(" " + dimGray + fmt.Sprintf("%d miss", pc.Misses) + reset)
+	if hit >= 0 {
+		h := label + dimGray + "hit" + reset + " " + cacheColor(hit) + fmt.Sprintf("%d%%", hit) + reset
+		if pc != nil && pc.Misses > 0 {
+			h += " " + yellow + fmt.Sprintf("%d %s", pc.Misses, plural(pc.Misses, "miss", "misses")) + reset
+		}
+		parts = append(parts, h)
 	}
 	if in > 0 {
-		b.WriteString(sep + dimGray + "in" + reset + " " + white + fmtTokens(in) + reset +
-			sep + dimGray + "out" + reset + " " + white + fmtTokens(t.Output) + reset)
+		parts = append(parts,
+			dimGray+"in"+reset+" "+white+fmtTokens(in)+reset+" "+
+				dimGray+"("+fmtTokens(t.Read)+" read, "+fmtTokens(t.Write)+" write, "+
+				fmtTokens(t.Input)+" uncached)"+reset,
+			dimGray+"out"+reset+" "+white+fmtTokens(t.Output)+reset)
 	}
-	return b.String()
+	return strings.Join(parts, sep)
+}
+
+// cacheState is "warm 4m of 1h left", "cold · recache 45k", or "off" when
+// no response this session reported cache tokens.
+func cacheState(pc *promptCache, now time.Time) string {
+	switch {
+	case pc == nil:
+		return ""
+	case !pc.CachingObserved:
+		return dimGray + "off" + reset
+	case pc.Warm:
+		s := green + "warm" + reset
+		if left := pc.ExpiresAt - now.Unix(); pc.ExpiresAt > 0 && left > 0 {
+			s += " " + dimGray + fmtDuration(left*1000)
+			if pc.TTL != "" {
+				s += " of " + pc.TTL
+			}
+			s += " left" + reset
+		} else if pc.TTL != "" {
+			s += " " + dimGray + pc.TTL + reset
+		}
+		return s
+	default:
+		s := blue + "cold" + reset
+		if pc.RecacheIfCold != nil && *pc.RecacheIfCold > 0 {
+			s += " " + dimGray + "recache " + fmtTokens(*pc.RecacheIfCold) + reset
+		}
+		return s
+	}
+}
+
+func plural(n int, one, many string) string {
+	if n == 1 {
+		return one
+	}
+	return many
 }

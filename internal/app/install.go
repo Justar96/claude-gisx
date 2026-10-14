@@ -27,7 +27,6 @@ var (
 type installOpts struct {
 	force   bool
 	noCheck bool
-	hook    hookChoice
 }
 
 // The mark is drawn from the same heavy box-drawing family as the statusline's
@@ -158,8 +157,7 @@ func installCmd(opts installOpts) int {
 
 	if isOurs(s) && !opts.force {
 		fmt.Printf("  %s already active\n", okMark)
-		// Re-running setup is how you add the hook or keys you skipped.
-		code := hookInstallCmd(opts.hook)
+		code := cleanupLegacy()
 		fmt.Printf("\n  %s--force to reinstall, status to inspect%s\n\n", dim, reset)
 		return code
 	}
@@ -213,14 +211,14 @@ func installCmd(opts installOpts) int {
 		sl["hideVimModeIndicator"] = true
 	}
 	s["statusLine"] = sl
-	offerPromptHook(s, opts.hook)
+	if removePromptHook(s) {
+		step(okMark, "prompt hook", dimGray+"removed (no longer part of claude-gisx)"+reset)
+	}
 	if err := writeJSONFile(settingsPath(), s); err != nil {
 		fmt.Fprintf(os.Stderr, "  %s write failed: %v\n", failMark, err)
 		return 1
 	}
 	fmt.Printf("  %s installed\n", okMark)
-	cwd, _ := os.Getwd()
-	offerAPIKeys(cwd, hasPromptHook(s), false)
 	fmt.Printf("\n  %srestart Claude Code to apply%s\n\n", dim, reset)
 	return 0
 }
@@ -290,21 +288,6 @@ func statusCmd() int {
 	}
 	if _, err := os.Stat(backupFullPath()); err == nil {
 		row("snapshot", dim+backupFullPath()+reset)
-	}
-	if hasPromptHook(s) {
-		row("hook", okMark+" prompt rewrite")
-	} else {
-		row("hook", dim+"none  claude-gisx hook install"+reset)
-	}
-	// Run from a project to see its .claude/ files counted too.
-	cwd, _ := os.Getwd()
-	switch _, src := loadConfig(cwd).get("TYPESAFE_API_KEY"); src {
-	case "":
-		row("suggest", dim+"off  set TYPESAFE_API_KEY to enable"+reset)
-	case "env":
-		row("suggest", okMark+" on  "+dim+"key from environment"+reset)
-	default:
-		row("suggest", okMark+" on  "+dim+"key from "+src+reset)
 	}
 	fmt.Println()
 	return 0

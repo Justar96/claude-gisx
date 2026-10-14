@@ -2,14 +2,12 @@ package app
 
 import (
 	"encoding/json"
-	"os"
 	"testing"
 	"time"
 )
 
-// availableUpdate used to retry whenever it had no tag, so an offline machine
-// re-dialed GitHub on every render and paid the full timeout each time. A
-// recorded attempt — even one that produced no tag — must suppress the retry.
+// An offline machine records a check with no tag. That attempt — not the
+// missing tag — must decide whether to ask GitHub again.
 func TestAvailableUpdateHonorsRecordedEmptyAttempt(t *testing.T) {
 	isolateHome(t)
 	t.Setenv("TMPDIR", t.TempDir())
@@ -27,24 +25,12 @@ func TestAvailableUpdateHonorsRecordedEmptyAttempt(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	start := time.Now()
+	got := recordRefreshes(t)
 	if tag := availableUpdate(6 * time.Hour); tag != "" {
 		t.Errorf("expected no tag from the recorded attempt, got %q", tag)
 	}
-	if elapsed := time.Since(start); elapsed > 100*time.Millisecond {
-		t.Errorf("took %v — that's a network round trip, not a cache hit", elapsed)
-	}
-
-	after, err := os.ReadFile(updateCachePath())
-	if err != nil {
-		t.Fatal(err)
-	}
-	var c updateCache
-	if json.Unmarshal(after, &c) != nil {
-		t.Fatal(err)
-	}
-	if c.CheckedAt != recorded {
-		t.Error("the attempt was overwritten, so it re-fetched instead of backing off")
+	if len(*got) != 0 {
+		t.Errorf("a recent attempt should not refresh, got %v", *got)
 	}
 }
 
@@ -66,17 +52,28 @@ func TestAvailableUpdateRetriesAfterWindow(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	got := recordRefreshes(t)
 	availableUpdate(6 * time.Hour)
+	if len(*got) != 1 || (*got)[0] != "update" {
+		t.Errorf("an expired attempt should start a refresh, got %v", *got)
+	}
+}
 
-	after, err := os.ReadFile(updateCachePath())
-	if err != nil {
+// A stale cached tag still shows while the refresh runs.
+func TestAvailableUpdateShowsStaleTag(t *testing.T) {
+	isolateHome(t)
+	t.Setenv("TMPDIR", t.TempDir())
+	t.Setenv("CLAUDE_GISX_NO_UPDATE_CHECK", "")
+	old := Version
+	Version = "v1.0.0"
+	t.Cleanup(func() { Version = old })
+	recordRefreshes(t)
+
+	raw, _ := json.Marshal(updateCache{Tag: "v1.2.0", CheckedAt: time.Now().Add(-24 * time.Hour).Unix()})
+	if err := writeFileAtomic(updateCachePath(), raw); err != nil {
 		t.Fatal(err)
 	}
-	var c updateCache
-	if json.Unmarshal(after, &c) != nil {
-		t.Fatal(err)
-	}
-	if c.CheckedAt == stale {
-		t.Error("an expired attempt should have triggered a fresh check")
+	if tag := availableUpdate(6 * time.Hour); tag != "v1.2.0" {
+		t.Errorf("want v1.2.0, got %q", tag)
 	}
 }

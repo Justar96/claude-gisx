@@ -1,7 +1,6 @@
 package app
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -10,7 +9,6 @@ import (
 	"strings"
 	"sync"
 	"time"
-	"unicode/utf8"
 )
 
 type sessionInput struct {
@@ -29,7 +27,6 @@ type sessionInput struct {
 	RateLimits    *rateLimits    `json:"rate_limits,omitempty"`
 	PromptCache   *promptCache   `json:"prompt_cache,omitempty"`
 	SessionID     string         `json:"session_id,omitempty"`
-	SessionName   string         `json:"session_name,omitempty"`
 	Transcript    string         `json:"transcript_path,omitempty"`
 }
 
@@ -83,10 +80,13 @@ type rateBucket struct {
 // covers exactly the requests that count, so it wins over our transcript sum
 // for the hit rate; the transcript still supplies the in/out totals.
 type promptCache struct {
-	Warm            bool     `json:"warm"`
-	CachingObserved bool     `json:"caching_observed"`
-	HitRatio        *float64 `json:"hit_ratio"` // null until any input was counted
+	Warm            bool     `json:"warm"`             // cached prefix still within its TTL
+	CachingObserved bool     `json:"caching_observed"` // false: caching off or not reported
+	TTL             string   `json:"ttl"`              // "5m" or "1h"
+	ExpiresAt       int64    `json:"expires_at"`       // when the prefix goes cold
+	HitRatio        *float64 `json:"hit_ratio"`        // null until any input was counted
 	Misses          int      `json:"misses"`
+	RecacheIfCold   *int64   `json:"recache_tokens_if_cold"`
 }
 
 func renderStatusline(stdinJSON string) {
@@ -99,10 +99,6 @@ func renderStatusline(stdinJSON string) {
 		fmt.Print("Claude")
 		return
 	}
-
-	// Runs here rather than off cacheDir(): a dev build with no plugin
-	// configured never reaches that path, and the strays would linger.
-	cleanLegacyCache()
 
 	modelName := "Claude"
 	if data.Model != nil && data.Model.DisplayName != "" {
@@ -150,36 +146,31 @@ func renderStatusline(stdinJSON string) {
 		tk        tokenTotals
 		pluginOut string
 		updateTag string
-		nextKey   string
-		rewritten string
 		wg        sync.WaitGroup
-		gitDone   = make(chan struct{})
 	)
-	wg.Add(6)
-	go func() { defer wg.Done(); g = gitInfo(cwd); close(gitDone) }()
-	go func() { defer wg.Done(); u = fetchUsage(context.Background()) }()
+	wg.Add(5)
+	go func() { defer wg.Done(); g = gitInfo(cwd) }()
+	go func() { defer wg.Done(); u = fetchUsage() }()
 	go func() { defer wg.Done(); tk = sessionTokens(data.Transcript) }()
 	go func() { defer wg.Done(); pluginOut = runPlugin(stdinJSON) }()
 	go func() { defer wg.Done(); updateTag = availableUpdate(6 * time.Hour) }()
-	// Waits on git only for the facts it sends along; the transcript read and
-	// the cache check are what it spends its time on.
-	go func() {
-		defer wg.Done()
-		<-gitDone
-		w := workspaceFacts{Branch: g.branch, UncommittedChanges: g.dirty != "", ContextUsedPercent: pctUsed,
-			OpenPullRequest: data.PR != nil && data.PR.Number > 0}
-		if data.Cost != nil {
-			w.LinesAdded, w.LinesRemoved = data.Cost.LinesAdded, data.Cost.LinesRemoved
-		}
-		projectDir := cwd
-		if data.Workspace != nil && data.Workspace.ProjectDir != "" {
-			projectDir = data.Workspace.ProjectDir
-		}
-		nextKey = nextPrompt(data.Transcript, projectDir, w)
-		rewritten = lastRewrite(data.Transcript)
-	}()
 
-	cs := computeCompactState(ctxSize)
+	modelID, projectDir := "", cwd
+	if data.Model != nil {
+		modelID = data.Model.ID
+	}
+	if data.Workspace != nil && data.Workspace.ProjectDir != "" {
+		projectDir = data.Workspace.ProjectDir
+	}
+	cs := computeCompactState(ctxSize, modelID, projectDir)
+	// With auto-compact configured, the bar measures the runway to the
+	// compaction point rather than the model's full window: 100% is where
+	// Claude Code compacts, the same denominator its own "% left" uses.
+	barPct, barLabel := pctUsed, fmtCtxLabel(ctxSize)
+	if cs.threshold > 0 && data.ContextWindow != nil && data.ContextWindow.UsedPercentage != nil {
+		used := *data.ContextWindow.UsedPercentage / 100 * float64(ctxSize)
+		barPct, barLabel = int(used*100/float64(cs.threshold)), fmtCtxLabel(cs.threshold)
+	}
 	dir := filepath.Base(cwd)
 	dur := fmtDuration(durationMs)
 	trend := tokenTrend()
@@ -195,12 +186,8 @@ func renderStatusline(stdinJSON string) {
 		// A word, not an emoji — emoji widths vary per terminal and shift the line.
 		L.WriteString(sep + yellow + "fast" + reset)
 	}
-	L.WriteString(sep + ctxBar(pctUsed) + " " + pctColor(pctUsed) + fmt.Sprintf("%d%%", pctUsed) + reset +
-		dim + "/" + reset + dimGray + fmtCtxLabel(ctxSize) + reset)
-
-	if cs.userSet && cs.pct > 0 && pctUsed >= cs.pct {
-		L.WriteString(" " + bold + red + fmt.Sprintf("⚠ compact %d%%", cs.pct) + reset)
-	}
+	L.WriteString(sep + ctxBar(barPct) + " " + pctColor(barPct) + fmt.Sprintf("%d%%", barPct) + reset +
+		dim + "/" + reset + dimGray + barLabel + reset)
 	if cs.off {
 		L.WriteString(" " + dimGray + "compact:off" + reset)
 	}
@@ -222,11 +209,6 @@ func renderStatusline(stdinJSON string) {
 	// dir:branch segment didn't.
 	if wt != "" && wt != g.branch && wt != dir {
 		L.WriteString(sep + magenta + "⌥ " + wt + reset)
-	}
-	// Only a name someone chose or Claude generated — never the random
-	// default — so it's worth the width when present. Titles run long.
-	if name := truncate(data.SessionName, 32); name != "" {
-		L.WriteString(sep + dimGray + name + reset)
 	}
 	if dur != "" {
 		L.WriteString(sep + white + dur + reset)
@@ -267,11 +249,24 @@ func renderStatusline(stdinJSON string) {
 		L.WriteString(sep + magenta + "@" + data.Agent.Name + reset)
 	}
 
-	// ── Line 2: rate limits + extra credits ───────────────────────────────
+	// ── Line 2: this session's tokens — cache, in/out, the day's trend ────
+	var C strings.Builder
+	// Rendered whether or not the OAuth endpoint answers: it reads the
+	// session's own transcript, which every account has.
+	if s := paintTokens(tk, data.PromptCache, time.Now()); s != "" {
+		C.WriteString(s)
+	}
+	// The day's burn against the week's average: the same question as the
+	// session totals just before it, over a longer span.
+	if trend != "" {
+		if C.Len() > 0 {
+			C.WriteString(sep)
+		}
+		C.WriteString(trend)
+	}
+
+	// ── Line 3: plan quotas — 5h, 7d, spend, per-model, extra credits ─────
 	var R strings.Builder
-	fivePct := 0
-	weekPct := 0
-	limitPct := 0
 
 	// A reopened session gets no rate_limits until its first API response —
 	// fall back to the last-known buckets so the line isn't blank until then,
@@ -284,95 +279,63 @@ func renderStatusline(stdinJSON string) {
 	}
 	if hasBuckets(rl) {
 		if rl.FiveHour != nil {
-			fivePct = int(rl.FiveHour.UsedPercentage)
-			writeBucket(&R, "5h", fivePct, rl.FiveHour.ResetsAt, stale)
+			writeBucket(&R, "5h", int(rl.FiveHour.UsedPercentage), rl.FiveHour.ResetsAt, stale)
 		}
 		if rl.SevenDay != nil {
-			weekPct = int(rl.SevenDay.UsedPercentage)
-			writeBucket(&R, "7d", weekPct, rl.SevenDay.ResetsAt, stale)
+			writeBucket(&R, "7d", int(rl.SevenDay.UsedPercentage), rl.SevenDay.ResetsAt, stale)
 		}
 		if rl.SpendLimit != nil {
-			spendPct := int(rl.SpendLimit.UsedPercentage)
-			writeBucket(&R, "spend", spendPct, rl.SpendLimit.ResetsAt, stale)
-			limitPct = maxi(limitPct, spendPct)
+			writeBucket(&R, "spend", int(rl.SpendLimit.UsedPercentage), rl.SpendLimit.ResetsAt, stale)
 		}
 	}
-	limitPct = maxi(limitPct, maxi(fivePct, weekPct))
 
 	// Per-model quotas (e.g. Fable) and extra credits come from the OAuth
 	// usage endpoint — the statusline payload only carries 5h/7d.
 	if u != nil {
 		for _, s := range u.Scoped {
 			writeBucket(&R, s.Name, s.Pct, s.ResetsAt, false)
-			limitPct = maxi(limitPct, s.Pct)
+		}
+		// Dollars close the line — the one budget not counted in percent.
+		if e := u.Extra; e != nil {
+			if R.Len() > 0 {
+				R.WriteString(sep)
+			}
+			R.WriteString(white + "extra" + reset + " " + white + "$" + e.Used + reset +
+				dim + "/" + reset + dimGray + "$" + e.Limit + reset)
 		}
 	}
 
-	// Sits with the quotas, not after the credits: it's the same kind of
-	// reading on the same scale — how much of a budget is gone — asked of the
-	// session's own input instead of the plan's. Rendered outside the OAuth
-	// block because it holds for accounts that endpoint says nothing about.
-	if s := paintTokens(tk, data.PromptCache); s != "" {
-		if R.Len() > 0 {
-			R.WriteString(sep)
-		}
-		R.WriteString(s)
-	}
-	// The day's burn against the week's average: the same question as the
-	// session totals just before it, over a longer span.
-	if trend != "" {
-		if R.Len() > 0 {
-			R.WriteString(sep)
-		}
-		R.WriteString(trend)
-	}
-
-	// Dollars close the line — the one figure here that isn't a percentage.
-	if u != nil && u.Extra != nil {
-		if R.Len() > 0 {
-			R.WriteString(sep)
-		}
-		R.WriteString(dimGray + "extra" + reset + " " + white + "$" + u.Extra.Used +
-			dimGray + "/" + reset + white + "$" + u.Extra.Limit + reset)
-	}
-
-	// ── Line 3: warnings, plugin, next-prompt suggestion, or a tip ────────
-	T := tipLine(tipContext{
-		ctxPct:   pctUsed,
-		limitPct: limitPct,
-		weekPct:  weekPct,
-		compact:  cs,
-		plugin:   pluginOut,
-		suggest:  nextKey,
-		rewrite:  rewritten,
-		update:   updateTag,
-	})
+	// ── Line 4: plugin, update notice, or a tip ───────────────────────────
+	T := tipLine(tipContext{plugin: pluginOut, update: updateTag})
 
 	w := os.Stdout
 	_, _ = io.WriteString(w, L.String()+"\n")
-	if R.Len() > 0 {
-		_, _ = io.WriteString(w, R.String()+"\n")
+	for _, line := range []string{C.String(), R.String()} {
+		if line != "" {
+			_, _ = io.WriteString(w, line+"\n")
+		}
 	}
 	if T != "" {
 		_, _ = io.WriteString(w, T+"\n")
 	}
 }
 
-// writeBucket renders one quota segment — "5h 12% resets 2h 30m" — for the
-// payload's 5h/7d buckets and the per-model quotas alike. A stale segment is
-// last-known state restored across a restart, so it's drawn flat gray rather
-// than in the severity colors that imply a live reading.
+// writeBucket renders one quota segment — "5h 34% ↻ 2h 30m" — for the
+// payload's 5h/7d buckets and the per-model quotas alike. The percentage
+// carries the severity; the reset time stays quiet beside them. A
+// stale segment is last-known state restored across a restart, so it's drawn
+// flat gray rather than in colors that imply a live reading.
 func writeBucket(b *strings.Builder, name string, pct int, resetsAt int64, stale bool) {
-	label, value, left := white, pctColor(pct), remainingColor(100-pct)
+	label, value := white, pctColor(pct)
 	if stale {
-		label, value, left = dimGray, dimGray, dimGray
+		label, value = dimGray, dimGray
 	}
 	if b.Len() > 0 {
 		b.WriteString(sep)
 	}
 	b.WriteString(label + name + reset + " " + value + fmt.Sprintf("%d%%", pct) + reset)
 	if t := fmtRemaining(resetsAt); t != "" {
-		b.WriteString(" " + dimGray + "resets" + reset + " " + left + t + reset)
+		b.WriteString(" " + dim + "↻" + reset + " " + dimGray + t + reset)
 	}
 }
 
@@ -383,13 +346,4 @@ func shortModelName(name string) string {
 		return name[:i]
 	}
 	return name
-}
-
-// truncate cuts s to at most n runes, ending in an ellipsis when it had to.
-func truncate(s string, n int) string {
-	if utf8.RuneCountInString(s) <= n {
-		return s
-	}
-	r := []rune(s)
-	return strings.TrimRight(string(r[:n-1]), " ") + "…"
 }

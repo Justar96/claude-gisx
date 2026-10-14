@@ -9,7 +9,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"sync"
 	"time"
 )
 
@@ -51,24 +50,23 @@ type oauthBody struct {
 
 const (
 	usageFresh = 60 * time.Second
-	// How long a failed fetch suppresses the next one. Without this, an
-	// offline machine or a rotated token costs *every* render the full 3s
-	// HTTP timeout — the statusline hangs on each redraw instead of falling
-	// straight through to the cached numbers.
+	// How long a failed fetch suppresses the next one, so an offline machine
+	// or a rotated token doesn't start a doomed refresh on every render.
 	usageBackoff = 5 * time.Minute
 )
 
 func usageCachePath() string { return filepath.Join(lineCacheDir(), "statusline-usage.json") }
 func usageFailPath() string  { return filepath.Join(lineCacheDir(), "statusline-usage.fail") }
 
-func fetchUsage(ctx context.Context) *usage {
+// fetchUsage never touches the network: a stale cache is shown as-is while a
+// detached `refresh usage` fetches the next one.
+func fetchUsage() *usage {
 	cachePath := usageCachePath()
 	body := readCachedOAuth(cachePath, usageFresh)
-	if body == nil && !fetchBackedOff() {
-		body = doOAuthFetch(ctx, cachePath)
-	}
 	if body == nil {
-		// last-resort: any cached body, regardless of age
+		if !fetchBackedOff() {
+			startRefresh("usage")
+		}
 		body = readCachedOAuth(cachePath, 365*24*time.Hour)
 	}
 	if body == nil {
@@ -153,9 +151,7 @@ func oauthFetch(ctx context.Context, cachePath string) *oauthBody {
 	if token == "" {
 		return nil
 	}
-	reqCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
-	defer cancel()
-	req, err := http.NewRequestWithContext(reqCtx, "GET", "https://api.anthropic.com/api/oauth/usage", nil)
+	req, err := http.NewRequestWithContext(ctx, "GET", "https://api.anthropic.com/api/oauth/usage", nil)
 	if err != nil {
 		return nil
 	}
@@ -230,25 +226,4 @@ func cacheDir() string {
 		name = fmt.Sprintf("claude-gisx-%d", uid)
 	}
 	return filepath.Join(os.TempDir(), name)
-}
-
-// The old shared location. Remove only the files we put there — that directory
-// name is generic enough that it may not be ours alone, and the final Remove
-// deletes it only if it's empty, i.e. only if everything in it was ours.
-var legacyOnce sync.Once
-
-func cleanLegacyCache() {
-	legacyOnce.Do(func() { removeLegacyCache(os.TempDir()) })
-}
-
-func removeLegacyCache(tempRoot string) {
-	old := filepath.Join(tempRoot, "claude")
-	for _, n := range []string{
-		"statusline-extra-cache.json",
-		"statusline-plugin-cache.txt",
-		"gisx-update-cache.json",
-	} {
-		_ = os.Remove(filepath.Join(old, n))
-	}
-	_ = os.Remove(old)
 }

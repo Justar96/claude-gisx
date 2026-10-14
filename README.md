@@ -3,9 +3,10 @@
 A rich, dynamic statusline for [Claude Code](https://docs.claude.com/en/docs/claude-code) — single self-contained binary, no runtime deps.
 
 ```
-Opus 4.8/high · ████░░░░░░░░░░░ 28%/1M · myproject:main · 42m · $1.20 · +128 -31 · PR #42
-5h 32% resets 3h 12m · 7d 8% resets 5d 2h · Fable 61% resets 5d 2h · cache 96% · in 1.5M · out 15.1k · tokens 15.7M ▼47% · extra $4.20/$20.00
-next ❯ run the tests
+Opus 4.8/high · ████████████▉░░ 86%/347k · myproject:main · 42m · $1.20 · +128 -31 · PR #42
+cache warm 25m of 1h left · hit 96% · in 1.5M (1.4M read, 80.0k write, 2.0k uncached) · out 15.1k · daily 15.7M ▼47%
+5h 32% ↻ 3h 12m · 7d 8% ↻ 5d 2h · Fable 61% ↻ 5d 2h · extra $4.20/$20.00
+new in 2.1.260 · …
 ```
 
 ## Install
@@ -28,7 +29,6 @@ The installer:
 2. Verifies the SHA-256 checksum if `SHA256SUMS` is published with the release.
 3. Drops the binary at `~/.local/bin/claude-gisx` (Linux/macOS) or `%LOCALAPPDATA%\Programs\claude-gisx\claude-gisx.exe` (Windows).
 4. Runs `claude-gisx setup` to wire it into `~/.claude/settings.json`. Your existing `statusLine` is backed up first. Setup also sets `hideVimModeIndicator` (left alone if you already set it), since the statusline renders the vim mode itself.
-5. Asks `Install the prompt-rewrite hook? [y/N]` and, for any key it can't already find, asks you to paste your TypeSafe and DeepSeek API keys. Input is hidden, and Enter skips. Keys are saved to `~/.claude/.gisx/config.json`, readable only by you. A key found only in a project file (such as that project's `.env`) works only there, so setup offers to copy it for every project. Run `claude-gisx keys` at any time to add or replace keys. A "no" is remembered, so updates won't ask again. With no terminal (CI, scripts), it skips both questions and prints how to do it later.
 
 #### Installer options
 
@@ -38,7 +38,6 @@ The installer:
 | `CLAUDE_GISX_INSTALL_DIR` | Override install dir. Default: `~/.local/bin` (Unix) / `%LOCALAPPDATA%\Programs\claude-gisx` (Windows). |
 | `CLAUDE_GISX_REPO` | Pull binaries from a fork: `owner/repo`. |
 | `CLAUDE_GISX_SKIP_SETUP` | Install the binary only, don't touch settings.json. |
-| `CLAUDE_GISX_HOOK` | `yes` or `no` answers the prompt-hook question in advance, e.g. for unattended installs. |
 
 Restart Claude Code once done.
 
@@ -69,34 +68,28 @@ $ claude-gisx
 | `claude-gisx setup` | Write `~/.claude/settings.json` so Claude Code uses claude-gisx. Backs up any existing `statusLine` to `~/.claude/.gisx/`. |
 | `claude-gisx status` | Inspect current settings and backup state. |
 | `claude-gisx update` | Download the latest release, verify its SHA-256 against the published `SHA256SUMS`, and replace the running binary in place. `--check` only reports, `--force` reinstalls the current version. |
-| `claude-gisx uninstall` | Restore the previous `statusLine` (or remove it), and remove the prompt hook. |
-| `claude-gisx hook install` | Offer the prompt-rewrite hook and ask for any missing API keys. `--yes` installs without asking. `setup --hook` / `--no-hook` do the same during setup. `update` runs this with the newly installed binary. |
-| `claude-gisx keys` | Set or replace the TypeSafe and DeepSeek API keys. Input is hidden, and Enter keeps the current key. Keys are saved to `~/.claude/.gisx/config.json`. |
-| `claude-gisx hook uninstall` | Remove the prompt-rewrite hook and leave your other hooks alone. |
+| `claude-gisx uninstall` | Restore the previous `statusLine` (or remove it). |
 | `claude-gisx help` / `--help` | Help screen. |
 | `claude-gisx version` | Print the binary version. |
 | `<json> \| claude-gisx` | Render a statusline from session JSON on stdin. This is what Claude Code calls. |
 
 ## Features
 
-- **Model-aware context bar** — single `pct%/Nk` reading sized to the live `context_window.context_window_size` (so a 200k Haiku shows `42%/200k` and a 1M Opus shows `28%/1M`). Clean, mark-free bar that color-shifts as usage grows. Since the label carries the window size, a `(1M context)` suffix on the model name is dropped
-- **Auto-compact notice** — reads Claude Code's actual auto-compact env vars (`CLAUDE_AUTOCOMPACT_PCT_OVERRIDE`, `CLAUDE_CODE_AUTO_COMPACT_WINDOW`, `DISABLE_COMPACT`). When you've configured a threshold, a bold red `⚠ compact N%` badge appears once usage reaches it. With `DISABLE_COMPACT` set, the badge becomes a dim `compact:off`. No env var set → no badge
+- **Model-aware context bar** — single `pct%/Nk` reading sized to the live `context_window.context_window_size` (so a 200k Haiku shows `42%/200k` and a 1M Opus shows `28%/1M`). Clean, mark-free bar that color-shifts as usage grows and fills in eighth-cell steps, so it moves with every percent rather than every ~7%. Since the label carries the window size, a `(1M context)` suffix on the model name is dropped
+- **Auto-compact aware** — with an auto-compact window or percentage configured, the bar measures the runway to the point where Claude Code compacts (`86%/347k` = 86% of the way to compaction), read from the same env vars and settings Claude Code uses. See [Auto-compact](#auto-compact)
 - **Dynamic color coding** — green / cyan / orange / yellow / red based on usage thresholds
-- **Rate limit tracking** — 5-hour and 7-day usage with time-to-reset, plus any per-model quota your plan tracks separately (e.g. `Fable 61% resets 5d 2h`). Behind a Claude apps gateway, the `spend` limit from `rate_limits.spend_limit` joins them (it can pass 100%)
-- **Daily token trend** — `tokens 15.7M ▼47%` follows the session totals on the usage line: the newest day of `dailyModelTokens` in `~/.claude/stats-cache.json`, against the daily average of the 7 days before it (green `▲` up, dim `▼` down). Measured against that cache's own newest date and hidden once it's >10 days stale, since Claude Code only refreshes it when you open `/usage`
-- **Cache hit rate and session token split** — `cache 96% · in 1.5M · out 15.1k` sits with the quotas on the usage line: how much of this session's input the prompt cache absorbed, and the totals it's a share of. The rate is Claude Code's own `prompt_cache.hit_ratio` (v2.1.251+, the same figure `/usage` shows), falling back to a sum over the transcript on older versions; `cold` appears when the cached prefix has passed its TTL and the next request rebuilds it, and `N miss` counts prefixes invalidated with no compaction to explain it. `in`/`out` come from the session transcript's per-request `usage`, the only place the input/output split exists — `in` counts everything billed as input (cached prefix included, once per request), `out` is completions. The percentage is graded on its own scale (green ≥90, cyan ≥75, yellow ≥50, red below) because a healthy session lives in the 90s and the quota thresholds would paint that whole band one flat green. Read incrementally from where the last render stopped, so a multi-megabyte transcript costs a seek, not a re-parse
+- **Rate limit tracking** — line 3: 5-hour and 7-day usage with time-to-reset, plus any per-model quota your plan tracks separately (e.g. `Fable 61% ↻ 5d 2h`). Behind a Claude apps gateway, the `spend` limit from `rate_limits.spend_limit` joins them (it can pass 100%). Per-model quotas and extra credits come from the usage API, refreshed every 60s by a detached background process; renders show the cached figures and never wait on it
+- **Daily token trend** — `daily 15.7M ▼47%` closes the session line (line 2): the newest day of `dailyModelTokens` in `~/.claude/stats-cache.json`, against the daily average of the 7 days before it (green `▲` up, dim `▼` down). Measured against that cache's own newest date and hidden once it's >10 days stale, since Claude Code only refreshes it when you open `/usage`
+- **Prompt cache and session tokens** — line 2, in the terms of Anthropic's [prompt caching docs](https://platform.claude.com/docs/en/build-with-claude/prompt-caching): `cache warm 25m of 1h left · hit 96% 2 misses · in 1.5M (1.4M read, 80.0k write, 2.0k uncached) · out 15.1k`. **warm** means the cached prefix is still inside its TTL (`5m` or `1h`), with the time until it expires; **cold** means it has expired and the next request re-caches it (`recache 412.0k`); **off** means no response this session reported cache tokens. **hit** is cache reads as a share of all input, and **misses** count requests that re-processed content the cache already held, with no compaction to explain it. State, hit ratio and misses come from Claude Code's `prompt_cache` (v2.1.251+, the same figures `/usage` shows); older versions get the hit ratio from the transcript. **in** is total input = cache reads + cache writes + uncached input, summed from the transcript's per-request `usage` (`cache_read_input_tokens`, `cache_creation_input_tokens`, `input_tokens`), so it counts the cached prefix once per request, as billed. The hit ratio is graded on its own scale (green ≥90, cyan ≥75, yellow ≥50, red below), since a healthy session lives in the 90s. The transcript is read incrementally from where the last render stopped
 - **Git integration** — branch name and dirty state (one `git status --no-optional-locks`, so it never fights a commit in progress), plus worktree (`⌥`, for Claude worktree sessions and any linked worktree via `workspace.git_worktree`; hidden when it's named after the directory or branch already shown) and PR/MR (`PR #1234` or `MR #12` for GitLab, colored by review state, clickable via OSC 8 where the terminal supports it) indicators when present
-- **Session name** — the `--name`/`/rename` name or the AI-generated title, truncated to 32 characters, so parallel sessions read apart at a glance
 - **Session duration**, **cost**, and **lines changed** (`+128 -31`) from the live `cost.*` fields
 - **Effort level** rendered right on the model name (`Claude Opus 4.8/high`), from the session's `effort.level` — hidden for models with no effort dial
 - **Fast mode** chip (`fast`) when the session has fast mode on
-- **Extra usage** credits display (OAuth accounts)
+- **Extra usage** credits close line 3 (OAuth accounts)
 - **Vim mode**, **output style**, and **subagent** indicators when active
-- **Next-prompt suggestion** — with `TYPESAFE_API_KEY` set, the third line suggests what to send next once a turn ends: `next ❯ run the tests`. See [Next-prompt suggestion](#next-prompt-suggestion)
-- **Prompt rewrite hook** — `claude-gisx hook prompt` restates unclear prompts with DeepSeek before Claude reads them, or on demand with a `rw:` prefix. See [Prompt rewrite](#prompt-rewrite)
-- **Rotating third line** — the fallback when there's no suggestion: **what's new** parsed from Claude Code's own changelog cache (`~/.claude/cache/changelog.md`, feature entries only — fixes and links are skipped), plus **usage nudges**: `weekly 65% used · /usage-credits raise your weekly limit` past 50%. All local, no network. Warnings (auto-compact, rate limit) take the line 2 renders out of 3 — they stay true for hours, so they yield every third render instead of blocking the rotation outright
-- **Update notice** — when a newer release exists, the third line says so in a drifting red-to-pink tint: `✦ claude-gisx v1.2.2 available · claude-gisx update`. GitHub is checked at most once every 6 hours (cached in the temp dir, 1.5s timeout, silent on failure). Dev builds never nag; set `CLAUDE_GISX_NO_UPDATE_CHECK=1` to disable entirely
-- **Third-line plugin** — point `CLAUDE_GISX_PLUGIN` at any shell command (including `curl` against your own API) and its stdout becomes the third line. Timeout + caching are built in. See [Third-line plugin](#third-line-plugin)
+- **Rotating tip line** (line 4) — **what's new** parsed from Claude Code's own changelog cache (`~/.claude/cache/changelog.md`, feature entries only — fixes and links are skipped). All local, no network. 
+- **Update notice** — when a newer release exists, the tip line says so in a drifting red-to-pink tint: `✦ claude-gisx v1.2.2 available · claude-gisx update`. GitHub is checked at most once every 6 hours in a detached background process, so a render never waits on the network (silent on failure). Dev builds never nag; set `CLAUDE_GISX_NO_UPDATE_CHECK=1` to disable entirely
+- **Tip-line plugin** — point `CLAUDE_GISX_PLUGIN` at any shell command (including `curl` against your own API) and its stdout becomes the tip line. Timeout + caching are built in. See [Tip-line plugin](#tip-line-plugin)
 
 ## Manual setup
 
@@ -131,7 +124,7 @@ rm ~/.local/bin/claude-gisx       # or %LOCALAPPDATA%\Programs\claude-gisx on Wi
 ████░░░░░░░░░░░ 28%/1M
 ```
 
-The percentage and bar are sized to the live `context_window.context_window_size` from the session JSON, so a Haiku 200k session shows `42%/200k` while an Opus 1M session shows `28%/1M`.
+The context window is the only bar on the statusline. With no auto-compact setting it's sized to the live `context_window.context_window_size`, so a Haiku 200k session shows `42%/200k` and an Opus 1M session shows `28%/1M`. With one, it's sized to the compaction point instead — see below.
 
 | Usage | Color |
 |-------|-------|
@@ -140,125 +133,28 @@ The percentage and bar are sized to the live `context_window.context_window_size
 | 70%+ | Yellow |
 | 90%+ | Red |
 
-## Auto-compact notice
+## Auto-compact
 
-Claude Code's auto-compact threshold is controlled by environment variables (it is **not** exposed in `settings.json`). The `⚠ compact N%` badge mirrors those env vars and is **opt-in** — it appears only when you've configured one of them.
+When auto-compact is configured, the bar's 100% is the token count at which Claude Code compacts, and the label shows that count: `86%/347k` means 86% of the way to compaction. It's the same figure Claude Code's own "% left until auto-compact" is measured against.
 
-| Env var | Effect |
-|---------|--------|
-| `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE` | Set the % of the context window at which auto-compact triggers (1–100). Claude Code's built-in default is ~95% when unset. |
-| `CLAUDE_CODE_AUTO_COMPACT_WINDOW` | Treat a smaller token window as "full" for compaction. The badge remaps the threshold onto the displayed `used_percentage` scale so the % shown matches reality. |
-| `DISABLE_COMPACT` | Disable auto-compact entirely. The badge is suppressed and a dim `compact:off` appears next to the bar. |
-| `CLAUDE_GISX_COMPACT_PCT` | gisx-only override for the badge (does **not** change Claude Code's actual behavior). |
+The compaction point is worked out the way Claude Code (v2.1.299) does it:
+
+- **Window** — `CLAUDE_CODE_AUTO_COMPACT_WINDOW`, else `autoCompactWindow` from settings (what `/autocompact` writes): `modelSettings.<model>.autoCompactWindow` beats the top-level value, and `~/.claude/settings.json`, `<project>/.claude/settings.json` and `<project>/.claude/settings.local.json` are merged in that order. Clamped to at least 100k and at most the model's context window.
+- **Threshold** — window − 13k, or window × `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE`% if that's lower. A percentage with no window applies to the model's full context window.
+
+With neither set (or `"auto"`), Claude Code compacts at a window it tunes per model and doesn't expose, so the bar shows the raw context window. `DISABLE_COMPACT` or `DISABLE_AUTO_COMPACT` shows a dim `compact:off` next to the bar.
 
 ```bash
-# Trigger compact at 80% of the model's full context.
+# On a 1M model, compact around 360k: the bar reads against 347k.
+CLAUDE_CODE_AUTO_COMPACT_WINDOW=360000 claude
+
+# Compact at 80% of the model's full context.
 CLAUDE_AUTOCOMPACT_PCT_OVERRIDE=80 claude
-
-# On a 1M model, treat 500k as the working window. With the ~95% default,
-# the badge fires when used_percentage ≥ ~47% (= 95% × 500000 / 1000000).
-CLAUDE_CODE_AUTO_COMPACT_WINDOW=500000 claude
-
-# Disable auto-compact; statusline shows "compact:off".
-DISABLE_COMPACT=1 claude
 ```
 
-## Next-prompt suggestion
+## Tip-line plugin
 
-When a turn ends, the third line suggests the prompt that most likely moves the work forward:
-
-```
-next ❯ run the tests
-```
-
-It uses [TypeSafe](https://docs.typesafe.ai/introduction)'s Jev model, which returns a typed pick instead of generated text. One request per finished turn sends your last prompt, the start and end of Claude's reply (2,000 characters each, at most), and a few workspace facts: branch, uncommitted changes, lines changed, open PR, and context used. The request asks two questions:
-
-- a **Choice** over a fixed catalog: `run the tests`, `fix the failing tests`, `continue`, `/code-review`, `add tests for this`, `commit these changes`, `open a PR`, `update the README`, `explain what you changed`, `/security-review`, `/compact`, or `none`
-- a **Noul**: does the reply end by asking you something? If it does, nothing is suggested, because the next move is your answer.
-
-The pick shows only when it isn't `none` and its probability clears the threshold. It's cached against the turn's final transcript entry, so later redraws don't call the API again. Nothing is suggested while a turn is still running. If the request fails, is slow, or no key is set, the line falls back to the rotation below.
-
-| Env var | Default | Description |
-|---------|---------|-------------|
-| `TYPESAFE_API_KEY` | _(unset)_ | Turns the feature on. Get a key at [console.typesafe.ai](https://console.typesafe.ai/keys). |
-| `CLAUDE_GISX_SUGGEST_MIN` | `0.30` | Minimum probability the top pick needs before it's shown (0–1). |
-| `CLAUDE_GISX_NO_SUGGEST` | _(unset)_ | Set to anything to turn suggestions off while keeping the key. |
-| `TYPESAFE_BASE_URL` | `https://api.typesafe.ai` | API base URL. |
-| `TYPESAFE_DEFAULT_MODEL` | `jev-latest` | Model to use. Pin a version such as `jev-1.13.0` if you've tuned the threshold against it. |
-
-### Where to put the key
-
-Each of these settings can be an environment variable or an entry in a config file. The statusline reads the files itself, so a change takes effect on the next redraw with no restart. First match wins:
-
-1. the environment
-2. `<project>/.claude/settings.local.json`, under `env`. Claude Code gitignores this file, so it's the right place for a per-project key.
-3. `<project>/.env`, as `KEY=value` lines. Make sure it's gitignored.
-4. `<project>/.claude/settings.json`, under `env`. This file is usually committed, so don't put a key here.
-5. `~/.claude/settings.json`, under `env`
-6. `~/.claude/.gisx/config.json`, as flat keys. Use this to set a key once for every project.
-
-```json
-// ~/.claude/settings.json or <project>/.claude/settings.local.json
-{ "env": { "TYPESAFE_API_KEY": "ts-..." } }
-```
-
-```json
-// ~/.claude/.gisx/config.json
-{ "TYPESAFE_API_KEY": "ts-...", "CLAUDE_GISX_SUGGEST_MIN": 0.4 }
-```
-
-`claude-gisx status`, run from a project, shows whether suggestions are on and which file the key came from. `uninstall` leaves `config.json` in place.
-
-## Prompt rewrite
-
-`claude-gisx hook prompt` is a `UserPromptSubmit` hook that restates a prompt with clearer structure and grammar, using DeepSeek. Claude Code doesn't let a hook replace the prompt you typed, so the rewrite is used in one of two ways.
-
-**Auto.** This runs on every prompt:
-1. TypeSafe scores how clear the prompt is.
-2. Only a prompt that scores low goes to DeepSeek for a rewrite.
-3. TypeSafe checks that the rewrite still asks for the same thing. If it doesn't, the rewrite is dropped.
-4. Claude gets the rewrite as extra context next to your original, which stays authoritative.
-
-The statusline's third line shows `rewrote ❯ …` while the turn runs, so you can see what Claude was given. Slash commands, `!` shell escapes, replies shorter than four words, pasted content, and prompts containing code blocks are never rewritten. Without a TypeSafe key, every other prompt is rewritten and nothing is checked.
-
-**Trigger.** A prompt that starts with `rw:` (any letter case) isn't sent. The hook shows the rewrite instead and copies it to your clipboard (`clip.exe` on Windows and WSL, `pbcopy`, `wl-copy`, `xclip`, or `xsel`). Paste it to send it.
-
-```
-> rw: fix bug where statusline it show wrong branch when worktree
-  ✦ rewritten, copied to your clipboard, paste it to send:
-
-  Fix the bug where the statusline shows the wrong branch when using a worktree.
-```
-
-If anything fails or times out, the prompt goes through unchanged. The one exception is a failed `rw:` rewrite: that prompt is blocked with the error, since sending it as typed isn't what you asked for.
-
-Privacy: the prompts it rewrites are sent to DeepSeek, and with a TypeSafe key every prompt eligible for auto mode is also sent to TypeSafe for scoring.
-
-`claude-gisx setup` and `claude-gisx hook install` add it for you. To add it by hand, put this in `~/.claude/settings.json`:
-
-```json
-{
-  "hooks": {
-    "UserPromptSubmit": [
-      { "hooks": [ { "type": "command", "command": "claude-gisx hook prompt", "timeout": 15 } ] }
-    ]
-  }
-}
-```
-
-| Setting | Default | Description |
-|---------|---------|-------------|
-| `DEEPSEEK_API_KEY` | _(unset)_ | Required; the hook does nothing without it. It's read from the same places as the other keys, including `<project>/.env`. |
-| `CLAUDE_GISX_REWRITE_AUTO` | on | Set to `off` to keep only the `rw:` trigger. |
-| `CLAUDE_GISX_REWRITE_TRIGGER` | `rw:` | Prefix that asks for a rewrite you review yourself. It can't start with `?`, because Claude Code opens its shortcut help when `?` is typed into an empty prompt. |
-| `CLAUDE_GISX_REWRITE_BELOW` | `1.5` | Auto mode rewrites prompts with a clarity score below this. The scale runs from 0 (hard to act on) to 2 (clear). |
-| `CLAUDE_GISX_REWRITE_TIMEOUT` | `8` | Seconds allowed for each API call. |
-| `CLAUDE_GISX_REWRITE_MODEL` | `deepseek-flash` | DeepSeek model. |
-| `DEEPSEEK_BASE_URL` | `https://api.deepseek.com` | API base URL. |
-
-## Third-line plugin
-
-The bottom (tip) line is a plugin point. Wire it to any shell command — including a `curl` call against your own API — and that command's stdout becomes the third line.
+The bottom (tip) line is a plugin point. Wire it to any shell command — including a `curl` call against your own API — and that command's stdout becomes the tip line.
 
 ### Contract
 
@@ -271,9 +167,9 @@ The bottom (tip) line is a plugin point. Wire it to any shell command — includ
 | `CLAUDE_GISX_REPO` | `Justar96/claude-gisx` | Repo that `update` checks and downloads from. |
 
 - The plugin receives the **full session JSON on stdin** (same shape the statusline gets). Use `jq` to pull fields like `session_id`, `model.id`, `cost.total_cost_usd`.
-- First line of stdout becomes the third line (truncated to 500 chars). ANSI escapes (`\033[...`) are honored.
+- First line of stdout becomes the tip line (truncated to 500 chars). ANSI escapes (`\033[...`) are honored.
 - On timeout / empty stdout the last cached output is reused. If there's no cache, the built-in tip line shows.
-- Warnings always win — `⚠ compact` and `rate limit high` override the plugin. The plugin in turn outranks the next-prompt suggestion, the update notice, and the tip rotation.
+- The plugin outranks the update notice and the tip rotation.
 
 ### Connect to your own API
 

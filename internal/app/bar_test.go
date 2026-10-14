@@ -31,6 +31,19 @@ func TestCtxBarFilledCount(t *testing.T) {
 	}
 }
 
+func TestCtxBarPartialCell(t *testing.T) {
+	// 50% of 15 cells is 7.5: seven full cells, then a half block.
+	if s := ansiRe.ReplaceAllString(ctxBar(50), ""); s != "███████▌░░░░░░░" {
+		t.Errorf("ctxBar(50) should end its fill in a half block; got %q", s)
+	}
+	// Every cell is drawn exactly once, whatever the fill.
+	for _, p := range []int{0, 3, 42, 50, 99, 100} {
+		if n := len([]rune(ansiRe.ReplaceAllString(ctxBar(p), ""))); n != barWidth {
+			t.Errorf("ctxBar(%d) is %d cells wide, want %d", p, n, barWidth)
+		}
+	}
+}
+
 func TestCtxBarResets(t *testing.T) {
 	s := ctxBar(50)
 	if !strings.HasSuffix(s, reset) {

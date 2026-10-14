@@ -5,18 +5,18 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
-	"strings"
+	"regexp"
 	"time"
 )
 
-// Line 2 is the one part of the statusline whose data doesn't come from the
+// Line 3 is the one part of the statusline whose data doesn't come from the
 // payload alone, so it's the one that breaks when a session restarts:
 // Claude Code omits `rate_limits` until the session's first API response, and
 // the OAuth cache used to live in a temp dir that a reboot wipes. Both meant a
 // blank or half-drawn usage line for the first minutes after reopening.
 // Everything here backs that line with state that survives close/reopen.
 
-// Durable, unlike os.TempDir() — line 2's numbers stay true across reboots.
+// Durable, unlike os.TempDir() — line 3's numbers stay true across reboots.
 func lineCacheDir() string { return filepath.Join(claudeDir(), "cache") }
 
 func limitsCachePath() string { return filepath.Join(lineCacheDir(), "statusline-limits.json") }
@@ -103,30 +103,32 @@ func writeFileAtomic(path string, data []byte) error {
 		os.Remove(tmp.Name())
 		return err
 	}
-	sweepStaleTemps(filepath.Dir(path), filepath.Base(path))
 	return nil
 }
 
 // A render killed between the write and the rename leaves its temp file
 // behind for good, and this process gets killed routinely — that's the whole
 // reason the write is atomic. Sweep the strays, but only ones old enough that
-// no in-flight write from a concurrent session could still own them.
+// no in-flight write from a concurrent session could still own them. It runs
+// with the per-session prune rather than after every write: listing the
+// directory on each redraw cost more than the strays ever do.
 const tempTTL = 10 * time.Minute
 
-func sweepStaleTemps(dir, base string) {
+var tempNameRe = regexp.MustCompile(`^(statusline|gisx)-.+\.(json|txt|fail)\.\d+$`)
+
+func sweepStaleTemps(dir string) {
 	ents, err := os.ReadDir(dir)
 	if err != nil {
 		return
 	}
 	for _, e := range ents {
-		name := e.Name()
-		if e.IsDir() || !strings.HasPrefix(name, base+".") {
+		if e.IsDir() || !tempNameRe.MatchString(e.Name()) {
 			continue
 		}
 		info, err := e.Info()
 		if err != nil || time.Since(info.ModTime()) < tempTTL {
 			continue
 		}
-		_ = os.Remove(filepath.Join(dir, name))
+		_ = os.Remove(filepath.Join(dir, e.Name()))
 	}
 }

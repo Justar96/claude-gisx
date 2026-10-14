@@ -9,7 +9,6 @@
 #   CLAUDE_GISX_INSTALL_DIR=/path    override install dir (default: ~/.local/bin)
 #   CLAUDE_GISX_REPO=owner/repo      pull binaries from a fork
 #   CLAUDE_GISX_SKIP_SETUP=1         install the binary but skip writing settings.json
-#   CLAUDE_GISX_HOOK=yes|no          answer the prompt-rewrite hook question up front
 #
 # Exit codes:
 #   0 success · 1 missing tool · 2 unsupported OS/arch · 3 download failed · 4 setup failed
@@ -20,11 +19,6 @@ REPO="${CLAUDE_GISX_REPO:-Justar96/claude-gisx}"
 TAG="${CLAUDE_GISX_VERSION:-latest}"
 INSTALL_DIR="${CLAUDE_GISX_INSTALL_DIR:-$HOME/.local/bin}"
 SKIP_SETUP="${CLAUDE_GISX_SKIP_SETUP:-}"
-HOOK_FLAG=""
-case "${CLAUDE_GISX_HOOK:-}" in
-    y|yes|1|true) HOOK_FLAG="--hook" ;;
-    n|no|0|false) HOOK_FLAG="--no-hook" ;;
-esac
 
 # ── pretty output ─────────────────────────────────────────────────────────
 if [ -t 1 ]; then
@@ -147,7 +141,7 @@ if [ -z "$SKIP_SETUP" ]; then
     # for piped JSON.
     # stdin stays /dev/null (it's this script under curl | bash); setup asks
     # its y/n and key questions on /dev/tty, and skips them with no terminal.
-    if ! "${INSTALL_DIR}/claude-gisx" setup --force ${HOOK_FLAG} </dev/null; then
+    if ! "${INSTALL_DIR}/claude-gisx" setup --force </dev/null; then
         fail "setup failed — run '${INSTALL_DIR}/claude-gisx setup' manually" 4
     fi
 fi

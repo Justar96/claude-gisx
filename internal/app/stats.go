@@ -92,7 +92,7 @@ func paintTokenTrend(tokens int64, delta int) string {
 	if delta < 0 {
 		arrow, col, delta = "▼", dimGray, -delta
 	}
-	return dimGray + "tokens" + reset + " " + white + fmtTokens(tokens) + reset +
+	return dimGray + "daily" + reset + " " + white + fmtTokens(tokens) + reset +
 		" " + col + fmt.Sprintf("%s%d%%", arrow, delta) + reset
 }
 

@@ -159,9 +159,7 @@ func TestSweepRemovesStaleTempsButSparesInFlight(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := writeFileAtomic(filepath.Join(dir, base), []byte("{}")); err != nil {
-		t.Fatal(err)
-	}
+	sweepStaleTemps(dir)
 
 	if _, err := os.Stat(stale); !os.IsNotExist(err) {
 		t.Error("abandoned temp file should have been swept")
@@ -170,43 +168,7 @@ func TestSweepRemovesStaleTempsButSparesInFlight(t *testing.T) {
 		t.Error("a temp file young enough to be in flight must be spared")
 	}
 	if _, err := os.Stat(unrelated); err != nil {
-		t.Error("sweep must not touch files that aren't temps of this target")
-	}
-}
-
-func TestRemoveLegacyCacheTakesOnlyOurFiles(t *testing.T) {
-	root := t.TempDir()
-	old := filepath.Join(root, "claude")
-	if err := os.MkdirAll(old, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	ours := filepath.Join(old, "statusline-extra-cache.json")
-	theirs := filepath.Join(old, "some-other-tool.json")
-	for _, p := range []string{ours, theirs} {
-		if err := os.WriteFile(p, []byte("x"), 0o644); err != nil {
-			t.Fatal(err)
-		}
-	}
-
-	removeLegacyCache(root)
-
-	if _, err := os.Stat(ours); !os.IsNotExist(err) {
-		t.Error("our orphaned cache file should be gone")
-	}
-	if _, err := os.Stat(theirs); err != nil {
-		t.Error("another tool's file in /tmp/claude must be left alone")
-	}
-	if _, err := os.Stat(old); err != nil {
-		t.Error("directory must survive while it still holds someone else's files")
-	}
-
-	// With only our files gone, a second pass on an emptied dir reclaims it.
-	if err := os.Remove(theirs); err != nil {
-		t.Fatal(err)
-	}
-	removeLegacyCache(root)
-	if _, err := os.Stat(old); !os.IsNotExist(err) {
-		t.Error("emptied legacy dir should be removed")
+		t.Error("sweep must not touch files that aren't temps")
 	}
 }
 

@@ -83,16 +83,16 @@ func TestRenderTokenTrend(t *testing.T) {
 	}
 
 	// Latest day 2×200k = 400k against a 2×100k = 200k daily average.
-	if got := stripANSI(renderTokenTrend(latestVs(200_000, 100_000), now)); got != "tokens 400.0k ▲100%" {
-		t.Errorf("got %q, want %q", got, "tokens 400.0k ▲100%")
+	if got := stripANSI(renderTokenTrend(latestVs(200_000, 100_000), now)); got != "daily 400.0k ▲100%" {
+		t.Errorf("got %q, want %q", got, "daily 400.0k ▲100%")
 	}
 	// A quiet day reads as a drop.
-	if got := stripANSI(renderTokenTrend(latestVs(50_000, 200_000), now)); got != "tokens 100.0k ▼75%" {
-		t.Errorf("got %q, want %q", got, "tokens 100.0k ▼75%")
+	if got := stripANSI(renderTokenTrend(latestVs(50_000, 200_000), now)); got != "daily 100.0k ▼75%" {
+		t.Errorf("got %q, want %q", got, "daily 100.0k ▼75%")
 	}
 	// Flat usage is neither up nor down.
-	if got := stripANSI(renderTokenTrend(latestVs(100_000, 100_000), now)); got != "tokens 200.0k ▲0%" {
-		t.Errorf("got %q, want %q", got, "tokens 200.0k ▲0%")
+	if got := stripANSI(renderTokenTrend(latestVs(100_000, 100_000), now)); got != "daily 200.0k ▲0%" {
+		t.Errorf("got %q, want %q", got, "daily 200.0k ▲0%")
 	}
 
 	// Eight days is the minimum: the reported day plus a full week behind it.

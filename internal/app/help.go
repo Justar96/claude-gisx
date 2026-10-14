@@ -17,16 +17,13 @@ func helpScreen() {
 		{"status", "show install state and backup"},
 		{"update", "download the latest release (--check to only look)"},
 		{"uninstall", "restore your previous statusLine"},
-		{"hook install", "add the prompt-rewrite hook and API keys (--yes to skip the question)"},
-		{"hook uninstall", "remove the prompt-rewrite hook"},
-		{"keys", "set or replace the TypeSafe and DeepSeek API keys"},
 		{"help", "this screen"},
 	})
 	section("ENV", []helpItem{
-		{"CLAUDE_AUTOCOMPACT_PCT_OVERRIDE", "Claude Code's compact %; statusline shows a red ⚠ when reached"},
-		{"CLAUDE_CODE_AUTO_COMPACT_WINDOW", "shrink the effective compaction window"},
+		{"CLAUDE_CODE_AUTO_COMPACT_WINDOW", "auto-compact window; the context bar fills to the compaction point"},
+		{"CLAUDE_AUTOCOMPACT_PCT_OVERRIDE", "compact at this % of the window; the bar follows it"},
 		{"DISABLE_COMPACT", "disables auto-compact; statusline shows a dim compact:off badge"},
-		{"CLAUDE_GISX_PLUGIN", "shell command whose stdout replaces line 3"},
+		{"CLAUDE_GISX_PLUGIN", "shell command whose stdout replaces the tip line"},
 		{"CLAUDE_GISX_NO_UPDATE_CHECK", "don't check GitHub for new releases"},
 	})
 	fmt.Printf("  %sgithub.com/Justar96/claude-gisx%s\n\n", cyan, reset)

@@ -3,8 +3,10 @@ package app
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"os/exec"
 	"strings"
+	"time"
 )
 
 type gitState struct {
@@ -23,8 +25,15 @@ type gitState struct {
 // the index refresh write, so a render never contends with real git work.
 // --no-ahead-behind: counting commits against upstream walks history, and the
 // count isn't shown.
+//
+// The timeout is for a huge or cold repo, where status can take seconds and
+// would hold up every other segment: better a missing branch than no line.
+const gitTimeout = 800 * time.Millisecond
+
 func gitInfo(cwd string) gitState {
-	out, err := exec.Command("git", "--no-optional-locks", "-C", cwd, "status", "--porcelain=v2", "--branch", "--no-ahead-behind").Output()
+	ctx, cancel := context.WithTimeout(context.Background(), gitTimeout)
+	defer cancel()
+	out, err := exec.CommandContext(ctx, "git", "--no-optional-locks", "-C", cwd, "status", "--porcelain=v2", "--branch", "--no-ahead-behind").Output()
 	if err != nil {
 		return gitState{}
 	}

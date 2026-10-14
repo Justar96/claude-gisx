@@ -58,8 +58,8 @@ func fmtCtxLabel(size int) string {
 	}
 }
 
-func maxi(a, b int) int {
-	if a > b {
+func mini(a, b int) int {
+	if a < b {
 		return a
 	}
 	return b
