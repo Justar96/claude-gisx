@@ -163,6 +163,24 @@ func renderStatusline(stdinJSON string) {
 		projectDir = data.Workspace.ProjectDir
 	}
 	cs := computeCompactState(ctxSize, modelID, projectDir)
+	// The gisx mod's copy of /context, when it's installed: the window by
+	// category, and the point auto-compact fires as Claude Code itself works
+	// it out. That beats our reading of the settings — the buffer it keeps
+	// below the window has changed between releases — and covers a window
+	// Claude Code tunes itself, which settings can't.
+	cm := loadCtxMap(data.SessionID)
+	if cm != nil && !cs.off && cm.AutoCompactThreshold != nil && *cm.AutoCompactThreshold > 0 {
+		cs.threshold = int(*cm.AutoCompactThreshold)
+	}
+	// The prefix a cold cache would rewrite is the prompt idle compaction
+	// measures; before Claude Code reports it, the context in use stands in.
+	var prompt int64
+	if pc := data.PromptCache; pc != nil && pc.RecacheIfCold != nil && *pc.RecacheIfCold > 0 {
+		prompt = *pc.RecacheIfCold
+	} else if data.ContextWindow != nil && data.ContextWindow.UsedPercentage != nil {
+		prompt = int64(*data.ContextWindow.UsedPercentage / 100 * float64(ctxSize))
+	}
+	idleAt := idleCompactAt(data.PromptCache, prompt, cs, projectDir)
 	// With auto-compact configured, the bar measures the runway to the
 	// compaction point rather than the model's full window: 100% is where
 	// Claude Code compacts, the same denominator its own "% left" uses.
@@ -186,7 +204,10 @@ func renderStatusline(stdinJSON string) {
 		// A word, not an emoji — emoji widths vary per terminal and shift the line.
 		L.WriteString(sep + yellow + "fast" + reset)
 	}
-	L.WriteString(sep + ctxBar(barPct) + " " + pctColor(barPct) + fmt.Sprintf("%d%%", barPct) + reset +
+	// The fill's length is the live payload's; its colors are the last
+	// breakdown the mod sent, a turn behind at most. The percentage keeps its
+	// threshold color, so the warning survives the category colors.
+	L.WriteString(sep + ctxBarBy(barPct, ctxSegments(cm)) + " " + pctColor(barPct) + fmt.Sprintf("%d%%", barPct) + reset +
 		dim + "/" + reset + dimGray + barLabel + reset)
 	if cs.off {
 		L.WriteString(" " + dimGray + "compact:off" + reset)
@@ -248,12 +269,19 @@ func renderStatusline(stdinJSON string) {
 	if data.Agent != nil && data.Agent.Name != "" {
 		L.WriteString(sep + magenta + "@" + data.Agent.Name + reset)
 	}
+	// Last on the line, where the eye lands after the session's own state.
+	if n := updateNotice(updateTag); n != "" {
+		L.WriteString(sep + n)
+	}
+
+	// ── Under line 1: the key to the bar's category colors, from the mod ──
+	M := paintCtxKey(cm)
 
 	// ── Line 2: this session's tokens — cache, in/out, the day's trend ────
 	var C strings.Builder
 	// Rendered whether or not the OAuth endpoint answers: it reads the
 	// session's own transcript, which every account has.
-	if s := paintTokens(tk, data.PromptCache, time.Now()); s != "" {
+	if s := paintTokens(tk, data.PromptCache, time.Now(), idleAt); s != "" {
 		C.WriteString(s)
 	}
 	// The day's burn against the week's average: the same question as the
@@ -305,12 +333,12 @@ func renderStatusline(stdinJSON string) {
 		}
 	}
 
-	// ── Line 4: plugin, update notice, or a tip ───────────────────────────
-	T := tipLine(tipContext{plugin: pluginOut, update: updateTag})
+	// ── Line 4: the user's plugin, when one is set ────────────────────────
+	T := pluginOut
 
 	w := os.Stdout
 	_, _ = io.WriteString(w, L.String()+"\n")
-	for _, line := range []string{C.String(), R.String()} {
+	for _, line := range []string{M, C.String(), R.String()} {
 		if line != "" {
 			_, _ = io.WriteString(w, line+"\n")
 		}

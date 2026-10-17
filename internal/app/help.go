@@ -23,7 +23,8 @@ func helpScreen() {
 		{"CLAUDE_CODE_AUTO_COMPACT_WINDOW", "auto-compact window; the context bar fills to the compaction point"},
 		{"CLAUDE_AUTOCOMPACT_PCT_OVERRIDE", "compact at this % of the window; the bar follows it"},
 		{"DISABLE_COMPACT", "disables auto-compact; statusline shows a dim compact:off badge"},
-		{"CLAUDE_GISX_PLUGIN", "shell command whose stdout replaces the tip line"},
+		{"CLAUDE_GISX_RECACHE_WARN", "prefix size (tokens) at which a cold cache suggests /compact; default 100000"},
+		{"CLAUDE_GISX_PLUGIN", "shell command whose stdout fills line 4"},
 		{"CLAUDE_GISX_NO_UPDATE_CHECK", "don't check GitHub for new releases"},
 	})
 	fmt.Printf("  %sgithub.com/Justar96/claude-gisx%s\n\n", cyan, reset)

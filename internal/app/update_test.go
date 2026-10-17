@@ -51,3 +51,12 @@ func TestAssetNameMatchesBuildScript(t *testing.T) {
 		t.Fatal("empty asset name")
 	}
 }
+
+func TestUpdateNotice(t *testing.T) {
+	if got := updateNotice(""); got != "" {
+		t.Errorf("no update should render nothing, got %q", got)
+	}
+	if got, want := ansiRe.ReplaceAllString(updateNotice("v1.4.0"), ""), "↑ gisx v1.4.0 · run claude-gisx update"; got != want {
+		t.Errorf("updateNotice = %q, want %q", got, want)
+	}
+}

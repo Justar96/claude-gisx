@@ -135,7 +135,7 @@ func saveTokenCache(transcriptPath string, c *tokenCache, fresh bool) {
 	_ = writeFileAtomic(tokenCachePath(transcriptPath), raw)
 }
 
-// Token caches are per-session and nothing ever deletes
+// Token caches and context maps are per-session and nothing ever deletes
 // the session, so without a sweep the cache dir grows a small file per
 // conversation forever.
 const tokenCacheTTL = 14 * 24 * time.Hour
@@ -149,7 +149,7 @@ func pruneTokenCaches() {
 	}
 	for _, e := range ents {
 		name := e.Name()
-		if e.IsDir() || !strings.HasPrefix(name, "statusline-tokens-") {
+		if e.IsDir() || !(strings.HasPrefix(name, "statusline-tokens-") || strings.HasPrefix(name, "statusline-context-")) {
 			continue
 		}
 		info, err := e.Info()
@@ -163,14 +163,15 @@ func pruneTokenCaches() {
 // paintTokens renders the session's prompt cache in the terms Anthropic's
 // docs use, state first and token counts after:
 //
-//	cache warm 4m of 1h left · hit 93% · 2 misses · in 1.5M (1.4M read, 80k write, 2.0k uncached) · out 15.1k
+//	cache warm 52m of 1h left · idle compact in 46m · hit 93% · 2 misses · in 1.5M (1.4M read, 80k write, 2.0k uncached) · out 15.1k
 //
 // warm/cold, the TTL, the hit ratio and misses come from the payload's
 // prompt_cache (Claude Code v2.1.251+, the figures /usage shows). Older
 // versions get the hit ratio from the transcript sum and no state. `in` is
 // total input — cache reads + cache writes + uncached input — so it counts
-// the cached prefix once per request, exactly as it's billed.
-func paintTokens(t tokenTotals, pc *promptCache, now time.Time) string {
+// the cached prefix once per request, exactly as it's billed. idleAt is when
+// Claude Code compacts the session if nobody types (unix seconds, 0 for never).
+func paintTokens(t tokenTotals, pc *promptCache, now time.Time, idleAt int64) string {
 	in := t.Input + t.Write + t.Read
 	hit := -1
 	switch {
@@ -185,6 +186,9 @@ func paintTokens(t tokenTotals, pc *promptCache, now time.Time) string {
 	if state := cacheState(pc, now); state != "" {
 		parts = append(parts, label+state)
 		label = ""
+	}
+	if left := idleAt - now.Unix(); idleAt > 0 && left > 0 {
+		parts = append(parts, magenta+"idle compact in "+fmtDuration(left*1000)+reset)
 	}
 	if hit >= 0 {
 		h := label + dimGray + "hit" + reset + " " + cacheColor(hit) + fmt.Sprintf("%d%%", hit) + reset
@@ -203,8 +207,16 @@ func paintTokens(t tokenTotals, pc *promptCache, now time.Time) string {
 	return strings.Join(parts, sep)
 }
 
-// cacheState is "warm 4m of 1h left", "cold · recache 45k", or "off" when
-// no response this session reported cache tokens.
+// A cache read refreshes the entry for free, so the last minute is the time
+// to send the next message, and an expired prefix this large is cheaper to
+// /compact than to write back at the cache-write rate.
+const (
+	cacheWarnSec       = 60
+	defaultRecacheWarn = 100_000
+)
+
+// cacheState is "warm 4m of 1h left", "cold recache 412.0k /compact first", or
+// "off" when no response this session reported cache tokens.
 func cacheState(pc *promptCache, now time.Time) string {
 	switch {
 	case pc == nil:
@@ -212,23 +224,43 @@ func cacheState(pc *promptCache, now time.Time) string {
 	case !pc.CachingObserved:
 		return dimGray + "off" + reset
 	case pc.Warm:
-		s := green + "warm" + reset
-		if left := pc.ExpiresAt - now.Unix(); pc.ExpiresAt > 0 && left > 0 {
-			s += " " + dimGray + fmtDuration(left*1000)
+		left := pc.ExpiresAt - now.Unix()
+		if pc.ExpiresAt <= 0 || left <= 0 {
+			s := green + "warm" + reset
 			if pc.TTL != "" {
-				s += " of " + pc.TTL
+				s += " " + dimGray + pc.TTL + reset
 			}
-			s += " left" + reset
-		} else if pc.TTL != "" {
-			s += " " + dimGray + pc.TTL + reset
+			return s
 		}
-		return s
+		col := cacheLifeColor(left, pc.TTL)
+		s := col + "warm " + fmtDuration(left*1000) + reset + dimGray
+		if pc.TTL != "" {
+			s += " of " + pc.TTL
+		}
+		return s + " left" + reset
 	default:
 		s := blue + "cold" + reset
 		if pc.RecacheIfCold != nil && *pc.RecacheIfCold > 0 {
 			s += " " + dimGray + "recache " + fmtTokens(*pc.RecacheIfCold) + reset
+			if *pc.RecacheIfCold >= int64(envInt("CLAUDE_GISX_RECACHE_WARN", defaultRecacheWarn)) {
+				s += " " + yellow + "/compact first" + reset
+			}
 		}
 		return s
+	}
+}
+
+// cacheLifeColor grades the time a warm cache has left: green while there's
+// plenty, yellow from 40% of its lifetime down, red in the last minute.
+func cacheLifeColor(leftSec int64, ttl string) string {
+	life := map[string]int64{"5m": 300, "1h": 3600}[ttl]
+	switch {
+	case leftSec <= cacheWarnSec:
+		return red
+	case life > 0 && leftSec*10 <= life*4:
+		return yellow
+	default:
+		return green
 	}
 }
 

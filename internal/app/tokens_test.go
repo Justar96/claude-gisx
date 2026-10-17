@@ -110,11 +110,11 @@ var ansiRe = regexp.MustCompile(`\x1b\[[0-9;]*m`)
 
 func TestPaintTokens(t *testing.T) {
 	now := time.Unix(1_000_000, 0)
-	if got := paintTokens(tokenTotals{}, nil, now); got != "" {
+	if got := paintTokens(tokenTotals{}, nil, now, 0); got != "" {
 		t.Errorf("no input should render nothing, got %q", got)
 	}
 	// Older Claude Code: no prompt_cache, so the transcript supplies the ratio.
-	got := ansiRe.ReplaceAllString(paintTokens(tokenTotals{Input: 2_000, Write: 8_000, Read: 990_000, Output: 34_000}, nil, now), "")
+	got := ansiRe.ReplaceAllString(paintTokens(tokenTotals{Input: 2_000, Write: 8_000, Read: 990_000, Output: 34_000}, nil, now, 0), "")
 	want := "cache hit 99% · in 1.0M (990.0k read, 8.0k write, 2.0k uncached) · out 34.0k"
 	if got != want {
 		t.Errorf("paintTokens = %q, want %q", got, want)
@@ -128,24 +128,56 @@ func TestPaintTokensPayloadCache(t *testing.T) {
 	now := time.Unix(1_000_000, 0)
 	ratio := 0.42
 	recache := int64(45_000)
+	big := int64(412_000)
 	cases := []struct {
-		name string
-		tk   tokenTotals
-		pc   promptCache
-		want string
+		name   string
+		tk     tokenTotals
+		pc     promptCache
+		idleAt int64
+		want   string
 	}{
 		{"warm with time left", tokenTotals{Input: 500, Read: 500, Output: 10},
 			promptCache{Warm: true, CachingObserved: true, TTL: "1h", ExpiresAt: now.Unix() + 240, HitRatio: &ratio, Misses: 1},
-			"cache warm 4m of 1h left · hit 42% 1 miss · in 1.0k (500 read, 0 write, 500 uncached) · out 10"},
+			0, "cache warm 4m of 1h left · hit 42% 1 miss · in 1.0k (500 read, 0 write, 500 uncached) · out 10"},
 		{"cold with a recache cost", tokenTotals{},
 			promptCache{CachingObserved: true, TTL: "5m", HitRatio: &ratio, Misses: 3, RecacheIfCold: &recache},
-			"cache cold recache 45.0k · hit 42% 3 misses"},
-		{"caching never observed", tokenTotals{}, promptCache{}, "cache off"},
+			0, "cache cold recache 45.0k · hit 42% 3 misses"},
+		{"cold with a prefix worth compacting", tokenTotals{},
+			promptCache{CachingObserved: true, TTL: "1h", RecacheIfCold: &big},
+			0, "cache cold recache 412.0k /compact first"},
+		{"idle compaction armed", tokenTotals{},
+			promptCache{Warm: true, CachingObserved: true, TTL: "1h", ExpiresAt: now.Unix() + 3000},
+			now.Unix() + 2640, "cache warm 50m of 1h left · idle compact in 44m"},
+		{"idle compaction already due", tokenTotals{},
+			promptCache{Warm: true, CachingObserved: true, TTL: "1h", ExpiresAt: now.Unix() + 300},
+			now.Unix() - 60, "cache warm 5m of 1h left"},
+		{"caching never observed", tokenTotals{}, promptCache{}, 0, "cache off"},
 	}
 	for _, c := range cases {
 		pc := c.pc
-		if got := ansiRe.ReplaceAllString(paintTokens(c.tk, &pc, now), ""); got != c.want {
+		if got := ansiRe.ReplaceAllString(paintTokens(c.tk, &pc, now, c.idleAt), ""); got != c.want {
 			t.Errorf("%s:\n got %q\nwant %q", c.name, got, c.want)
+		}
+	}
+}
+
+func TestCacheLifeColor(t *testing.T) {
+	cases := []struct {
+		left int64
+		ttl  string
+		want string
+	}{
+		{3000, "1h", green},
+		{1440, "1h", yellow}, // 40% of an hour
+		{200, "5m", green},
+		{120, "5m", yellow},
+		{60, "5m", red},
+		{30, "", red},
+		{600, "", green}, // unknown TTL: no middle tier
+	}
+	for _, c := range cases {
+		if got := cacheLifeColor(c.left, c.ttl); got != c.want {
+			t.Errorf("cacheLifeColor(%d, %q) = %q, want %q", c.left, c.ttl, got, c.want)
 		}
 	}
 }

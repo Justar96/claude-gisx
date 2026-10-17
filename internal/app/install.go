@@ -72,10 +72,10 @@ func stateBadge(state string) string {
 
 func preview() {
 	fmt.Printf("  %spreview%s\n", dimGray, reset)
-	fmt.Printf("  %s%sOpus 4.8%s%s/%s%shigh%s %s %s██%s██%s%s░░░░░░░░░░░%s %s28%%%s%s/%s%s1M%s %s %sclaude-gisx%s%s:%s%smain%s %s %s12m%s %s %s$1.20%s\n",
+	fmt.Printf("  %s%sOpus 4.8%s%s/%s%shigh%s %s %s██▊%s%s░░░░░░░%s %s28%%%s%s/%s%s1M%s %s %sclaude-gisx%s%s:%s%smain%s %s %s12m%s %s %s$1.20%s\n",
 		bold, blue, reset, dim, reset, cyan, reset, dotMark,
-		green, cyan, reset, dimGray, reset,
-		green, reset, dim, reset, dimGray, reset,
+		cyan, reset, dimGray, reset,
+		cyan, reset, dim, reset, dimGray, reset,
 		dotMark, cyan, reset, dim, reset, green, reset,
 		dotMark, white, reset,
 		dotMark, white, reset,
@@ -85,9 +85,6 @@ func preview() {
 		dotMark, white, reset, green, reset, dimGray, reset, green, reset,
 		dotMark, white, reset, orange, reset, dimGray, reset, yellow, reset,
 		dotMark, white, reset, green, reset,
-	)
-	fmt.Printf("  %snew in 2.1.215%s %s %sClaude no longer runs /verify and /code-review on its own%s\n",
-		dimGray, reset, dotMark, dim, reset,
 	)
 	fmt.Println()
 }
@@ -157,7 +154,7 @@ func installCmd(opts installOpts) int {
 
 	if isOurs(s) && !opts.force {
 		fmt.Printf("  %s already active\n", okMark)
-		code := cleanupLegacy()
+		code := syncInstall()
 		fmt.Printf("\n  %s--force to reinstall, status to inspect%s\n\n", dim, reset)
 		return code
 	}
@@ -210,6 +207,7 @@ func installCmd(opts installOpts) int {
 	if _, ok := sl["hideVimModeIndicator"]; !ok {
 		sl["hideVimModeIndicator"] = true
 	}
+	addRefreshInterval(sl)
 	s["statusLine"] = sl
 	if removePromptHook(s) {
 		step(okMark, "prompt hook", dimGray+"removed (no longer part of claude-gisx)"+reset)
@@ -219,8 +217,55 @@ func installCmd(opts installOpts) int {
 		return 1
 	}
 	fmt.Printf("  %s installed\n", okMark)
+	stepMod()
 	fmt.Printf("\n  %srestart Claude Code to apply%s\n\n", dim, reset)
 	return 0
+}
+
+// addRefreshInterval: renders are event-driven, so an idle session's cache
+// countdown would freeze at the last message — exactly while it runs out.
+// Re-render on a timer too. Left alone if the user set it.
+func addRefreshInterval(sl map[string]any) bool {
+	if _, ok := sl["refreshInterval"]; ok {
+		return false
+	}
+	sl["refreshInterval"] = 30
+	return true
+}
+
+// syncInstall brings an active install up to what this binary expects: the
+// settings it adds and the mod it carries. `setup` on an active install runs
+// it, and so does `update`, on the new binary (`claude-gisx sync`), since the
+// outgoing one only knows its own release's settings.
+func syncInstall() int {
+	code := cleanupLegacy()
+	s := readSettings()
+	if !isOurs(s) {
+		return code
+	}
+	if sl, _ := s["statusLine"].(map[string]any); sl != nil && addRefreshInterval(sl) {
+		if err := writeJSONFile(settingsPath(), s); err != nil {
+			step(failMark, "refreshInterval", dimGray+err.Error()+reset)
+			code = 1
+		} else {
+			step(okMark, "refreshInterval", dimGray+"30s, so the cache countdown runs while idle"+reset)
+		}
+	}
+	if !stepMod() {
+		code = 1
+	}
+	return code
+}
+
+// stepMod installs the companion mod and prints one line saying how it went.
+func stepMod() bool {
+	what, err := installMod()
+	if err != nil {
+		step(failMark, "gisx mod", dimGray+err.Error()+reset)
+		return false
+	}
+	step(okMark, "gisx mod", dimGray+what+" · "+modDir()+reset)
+	return true
 }
 
 func uninstallCmd(opts installOpts) int {
@@ -253,6 +298,11 @@ func uninstallCmd(opts installOpts) int {
 	}
 	cleanBackup()
 	fmt.Printf("  %s cleaned up backups\n", okMark)
+	if removed, err := removeMod(); err != nil {
+		fmt.Fprintf(os.Stderr, "  %s gisx mod: %v\n", failMark, err)
+	} else if removed {
+		fmt.Printf("  %s removed the gisx mod\n", okMark)
+	}
 	fmt.Printf("\n  %srestart Claude Code to apply%s\n\n", dim, reset)
 	return 0
 }
@@ -288,6 +338,14 @@ func statusCmd() int {
 	}
 	if _, err := os.Stat(backupFullPath()); err == nil {
 		row("snapshot", dim+backupFullPath()+reset)
+	}
+	switch v := modVersion(); {
+	case isOurMod(modDir()):
+		row("mod", okMark+" gisx "+verLabel(v)+"  "+dim+modDir()+reset)
+	case v != "":
+		row("mod", yellow+"other"+reset+"  "+dim+modDir()+reset)
+	default:
+		row("mod", dim+"not installed (claude-gisx setup)"+reset)
 	}
 	fmt.Println()
 	return 0

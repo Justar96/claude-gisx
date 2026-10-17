@@ -1,4 +1,4 @@
-.PHONY: help build test vet fmt fmt-check tidy clean dist install run
+.PHONY: help build test vet fmt fmt-check tidy clean dist install run mod-check
 
 BIN     := claude-gisx
 VERSION ?= $(shell git describe --tags --abbrev=0 2>/dev/null | sed 's/^v//' || echo dev)
@@ -40,3 +40,7 @@ install: build ## Build and run setup against ~/.claude/settings.json
 
 run: build ## Build and render with a fixture on stdin
 	@echo '{"model":{"display_name":"Opus"},"context_window":{"used_percentage":15,"context_window_size":200000}}' | ./$(BIN)
+
+mod-check: ## Validate and test the gisx mod (needs the claude CLI)
+	claude plugin validate mods/gisx
+	claude plugin test mods/gisx

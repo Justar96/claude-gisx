@@ -46,6 +46,13 @@ func Run(args []string) int {
 			return uninstallCmd(installOpts{force: flags["force"]})
 		case "status":
 			return statusCmd()
+		case "ingest":
+			// The gisx mod pipes Claude Code's /context breakdown here.
+			return ingestCmd(os.Stdin)
+		case "sync":
+			// Run by `update` on the new binary, so its own settings and mod
+			// land rather than the outgoing binary's.
+			return syncInstall()
 		case "refresh":
 			// Started detached by a render whose cache went stale.
 			if len(pos) < 2 {

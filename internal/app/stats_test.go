@@ -6,56 +6,6 @@ import (
 	"time"
 )
 
-const changelogSample = `# Changelog
-
-## 2.1.215
-
-- Claude no longer runs the ` + "`/verify`" + ` skill on its own
-- Fixed a crash when a GrowthBook feature evaluates to null
-- Added the EndConversation tool — see https://www.anthropic.com/research/end-subset-conversations
-- Added reasoning effort to the ` + "`subagentStatusLine`" + ` payload
-
-## 2.1.212
-
-- ` + "`/fork`" + ` now copies your conversation into a new background session
-`
-
-func TestParseChangelog(t *testing.T) {
-	got := parseChangelog(strings.NewReader(changelogSample))
-	want := []changelogEntry{
-		{"2.1.215", "Claude no longer runs the /verify skill on its own"},
-		{"2.1.215", "Added reasoning effort to the subagentStatusLine payload"},
-		{"2.1.212", "/fork now copies your conversation into a new background session"},
-	}
-	if len(got) != len(want) {
-		t.Fatalf("got %d entries, want %d: %+v", len(got), len(want), got)
-	}
-	for i := range want {
-		if got[i] != want[i] {
-			t.Errorf("entry %d: got %+v, want %+v", i, got[i], want[i])
-		}
-	}
-}
-
-func TestCleanEntry(t *testing.T) {
-	long := strings.Repeat("word ", 40)
-	cases := []struct{ in, want string }{
-		{"Fixed a thing", ""},
-		{"Added a link https://example.com", ""},
-		{"Added `foo` support", "Added foo support"},
-		{"Nosplit" + strings.Repeat("x", 200), ""}, // no word boundary to cut at
-	}
-	for _, c := range cases {
-		if got := cleanEntry(c.in); got != c.want {
-			t.Errorf("cleanEntry(%.30q) = %q, want %q", c.in, got, c.want)
-		}
-	}
-	got := cleanEntry(long)
-	if len([]rune(got)) > maxEntryLen+1 || !strings.HasSuffix(got, "…") {
-		t.Errorf("long entry not truncated cleanly: %q", got)
-	}
-}
-
 func TestRenderTokenTrend(t *testing.T) {
 	now := time.Date(2026, 7, 20, 12, 0, 0, 0, time.UTC)
 	// i counts back from the newest day, so i==0 is the day being reported.

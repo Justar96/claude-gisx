@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strconv"
@@ -221,7 +222,13 @@ func updateCmd(opts installOpts, checkOnly bool) int {
 		return 1
 	}
 	step(okMark, "installed", dimGray+self+reset)
-	cleanupLegacy()
+	// The new binary knows its own release's settings and carries its own
+	// mod; this one only knows what came before.
+	sync := exec.Command(self, "sync")
+	sync.Stdout, sync.Stderr = os.Stdout, os.Stderr
+	if sync.Run() != nil {
+		cleanupLegacy()
+	}
 	fmt.Printf("\n  %srestart Claude Code to pick it up%s\n\n", dim, reset)
 	return 0
 }
@@ -352,4 +359,17 @@ func replaceSelf(self string, bin []byte) error {
 		return err
 	}
 	return nil
+}
+
+// updateNotice closes line 1 when a newer release is out: what's new, then
+// the command that gets it, so the badge says both what and how in one glance.
+// The release check runs in the background; tag is "" until it finds one.
+//
+//	↑ gisx v1.4.0 · run claude-gisx update
+func updateNotice(tag string) string {
+	if tag == "" {
+		return ""
+	}
+	return pinkTint("↑ gisx "+tag) + " " + dim + "·" + reset + " " +
+		dimGray + "run " + reset + white + "claude-gisx update" + reset
 }

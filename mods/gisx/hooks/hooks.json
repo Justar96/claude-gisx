@@ -1,0 +1,4 @@
+{
+  "description": "gisx: session.measure reads the /context breakdown and pipes it to `claude-gisx ingest`",
+  "modules": ["./register.ts"]
+}

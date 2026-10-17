@@ -1,0 +1,9 @@
+{
+  "name": "gisx",
+  "version": "0.1.0",
+  "description": "Companion to the claude-gisx status line: after each turn, hands it Claude Code's own /context breakdown so the status line can draw the context window category by category.",
+  "author": { "name": "Justar96", "url": "https://github.com/Justar96/claude-gisx" },
+  "repository": "https://github.com/Justar96/claude-gisx",
+  "license": "MIT",
+  "metadata": { "installedBy": "claude-gisx" }
+}
