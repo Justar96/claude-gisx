@@ -3,6 +3,7 @@ package app
 import (
 	"strings"
 	"testing"
+	"time"
 )
 
 const sampleIngest = `{"v":1,"session_id":"b1d2c3e4-0000-4000-8000-000000000001","max_tokens":387000,"total_tokens":121000,"auto_compact_threshold":374000,"categories":[
@@ -29,6 +30,38 @@ func TestIngestRoundTrip(t *testing.T) {
 	}
 }
 
+func TestLastCtxReport(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("USERPROFILE", t.TempDir())
+	if !lastCtxReport().IsZero() {
+		t.Fatal("no breakdown on disk should read as never")
+	}
+	before := time.Now().Add(-time.Second)
+	if err := storeCtxMap([]byte(sampleIngest)); err != nil {
+		t.Fatal(err)
+	}
+	if got := lastCtxReport(); got.Before(before) {
+		t.Errorf("lastCtxReport = %v, want the ingest's time", got)
+	}
+}
+
+func TestModReportLabel(t *testing.T) {
+	now := time.Date(2026, 11, 26, 12, 0, 0, 0, time.UTC)
+	for _, c := range []struct {
+		last time.Time
+		want string
+	}{
+		{time.Time{}, "none yet"},
+		{now.Add(-10 * time.Second), "last breakdown just now"},
+		{now.Add(-5 * time.Minute), "last breakdown 5m ago"},
+		{now.Add(-3 * 24 * time.Hour), "last breakdown 3d ago"},
+	} {
+		if got := ansiRe.ReplaceAllString(modReportLabel(c.last, now), ""); !strings.Contains(got, c.want) {
+			t.Errorf("modReportLabel(%v) = %q, want %q in it", now.Sub(c.last), got, c.want)
+		}
+	}
+}
+
 func TestIngestRejects(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	for name, body := range map[string]string{
@@ -46,23 +79,7 @@ func TestIngestRejects(t *testing.T) {
 	}
 }
 
-func TestPaintCtxKey(t *testing.T) {
-	if paintCtxKey(nil) != "" {
-		t.Error("no breakdown should draw nothing")
-	}
-	t.Setenv("HOME", t.TempDir())
-	if err := storeCtxMap([]byte(sampleIngest)); err != nil {
-		t.Fatal(err)
-	}
-	got := ansiRe.ReplaceAllString(paintCtxKey(loadCtxMap("b1d2c3e4-0000-4000-8000-000000000001")), "")
-	// Biggest first; the deferred MCP row sits outside the window.
-	want := "ctx messages 112.0k · tools 31.0k · system 9.0k · memory 400 · free 221.6k · buffer 13.0k"
-	if got != want {
-		t.Errorf("paintCtxKey:\n got %q\nwant %q", got, want)
-	}
-}
-
-// The bar and its key must agree on which color is which category.
+// The bar lays categories out in /context's order.
 func TestCtxSegmentsColors(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	if err := storeCtxMap([]byte(sampleIngest)); err != nil {
@@ -77,12 +94,6 @@ func TestCtxSegmentsColors(t *testing.T) {
 	// /context's order, not size: the conversation comes last.
 	if got := strings.Join(order, ","); got != "system,tools,messages,memory" {
 		t.Errorf("segments in %s, want /context's order", got)
-	}
-	key := paintCtxKey(b)
-	for _, s := range segs {
-		if !strings.Contains(key, s.color+s.label) {
-			t.Errorf("the key doesn't paint %s in its bar color", s.label)
-		}
 	}
 }
 

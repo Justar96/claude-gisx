@@ -274,9 +274,6 @@ func renderStatusline(stdinJSON string) {
 		L.WriteString(sep + n)
 	}
 
-	// ── Under line 1: the key to the bar's category colors, from the mod ──
-	M := paintCtxKey(cm)
-
 	// ── Line 2: this session's tokens — cache, in/out, the day's trend ────
 	var C strings.Builder
 	// Rendered whether or not the OAuth endpoint answers: it reads the
@@ -338,7 +335,7 @@ func renderStatusline(stdinJSON string) {
 
 	w := os.Stdout
 	_, _ = io.WriteString(w, L.String()+"\n")
-	for _, line := range []string{M, C.String(), R.String()} {
+	for _, line := range []string{C.String(), R.String()} {
 		if line != "" {
 			_, _ = io.WriteString(w, line+"\n")
 		}

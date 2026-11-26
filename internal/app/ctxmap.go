@@ -10,19 +10,16 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"time"
 )
 
 // The status line's payload says how full the context window is but never
 // what fills it. /context's breakdown reaches mods alone, so the gisx mod
 // (mods/gisx) pipes it to `claude-gisx ingest` after each turn. The next
-// render colors line 1's context bar by category and keys the colors on the
-// line beneath it, biggest first:
+// render colors line 1's context bar by category.
 //
-//	Opus 5.5 · ██████▌░░░ 66%/374k · …
-//	ctx messages 112.0k · tools 31.0k · MCP 18.0k · system 9.0k · free 197.0k
-//
-// Without the mod there's no file: the bar keeps its single threshold color
-// and the key is left out. Nothing is guessed.
+// Without the mod there's no file: the bar keeps its single threshold color.
+// Nothing is guessed.
 type ctxBreakdown struct {
 	V                    int           `json:"v"`
 	SessionID            string        `json:"session_id"`
@@ -82,6 +79,20 @@ func storeCtxMap(raw []byte) error {
 		return err
 	}
 	return writeFileAtomic(ctxMapPath(b.SessionID), out)
+}
+
+// lastCtxReport is when the mod last handed over a breakdown, in any
+// session: the zero time when none is on disk. It is how `status` tells a
+// mod Claude Code loads from one that only sits in the skills folder.
+func lastCtxReport() time.Time {
+	paths, _ := filepath.Glob(filepath.Join(lineCacheDir(), "statusline-context-*.json"))
+	var last time.Time
+	for _, p := range paths {
+		if st, err := os.Stat(p); err == nil && st.ModTime().After(last) {
+			last = st.ModTime()
+		}
+	}
+	return last
 }
 
 func loadCtxMap(sid string) *ctxBreakdown {
@@ -146,7 +157,7 @@ func ctxColor(themeKey string, i int) string {
 	return []string{green, orange, white}[i%3]
 }
 
-// ctxSeg is one category in use, colored the same on the bar and its key.
+// ctxSeg is one category in use and its color on the bar.
 type ctxSeg struct {
 	label  string
 	tokens int64
@@ -167,42 +178,6 @@ func ctxSegments(b *ctxBreakdown) []ctxSeg {
 		}
 	}
 	return segs
-}
-
-// paintCtxKey names the bar's colors, biggest first, then what's left of the
-// window: the free space and the auto-compact buffer.
-func paintCtxKey(b *ctxBreakdown) string {
-	segs := ctxSegments(b)
-	if len(segs) == 0 {
-		return ""
-	}
-	sort.SliceStable(segs, func(i, j int) bool { return segs[i].tokens > segs[j].tokens })
-	var free, buffer int64
-	for _, c := range b.Categories {
-		switch c.Kind {
-		case "free":
-			free += c.Tokens
-		case "buffer":
-			buffer += c.Tokens
-		}
-	}
-	var k strings.Builder
-	k.WriteString(white + "ctx" + reset)
-	for i, s := range segs {
-		if i > 0 {
-			k.WriteString(sep)
-		} else {
-			k.WriteString(" ")
-		}
-		k.WriteString(s.color + s.label + reset + " " + white + fmtTokens(s.tokens) + reset)
-	}
-	if free > 0 {
-		k.WriteString(sep + dimGray + "free " + fmtTokens(free) + reset)
-	}
-	if buffer > 0 {
-		k.WriteString(sep + dimGray + "buffer " + fmtTokens(buffer) + reset)
-	}
-	return k.String()
 }
 
 // apportion splits width cells across sizes by the largest remainder,

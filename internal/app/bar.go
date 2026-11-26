@@ -33,7 +33,7 @@ func ctxBar(pctUsed int) string {
 // one, which in /context's order is the conversation. Shares are strictly
 // proportional: on ten cells a floor of one per category would hand a few
 // hundred tokens of agents the same cell as 200k of messages, so the small
-// ones are left to the key beneath.
+// ones don't show.
 func ctxBarBy(pctUsed int, segs []ctxSeg) string {
 	if len(segs) == 0 {
 		return ctxBar(pctUsed)

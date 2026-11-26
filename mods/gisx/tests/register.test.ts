@@ -73,3 +73,28 @@ test('stays quiet when only the rate limits moved', async ($, on) => {
 
   expect(runs).toBe(0)
 })
+
+test('skips ingest when the engine gives no breakdown', async ($, on) => {
+  let runs = 0
+  on('session.measure', ($, e) => ({ changed: e.changed }))
+  on('session.usage', () => ({ value: { ...usage, context: { tokens: 121_000, window: 1_000_000, percent: 12 } } }))
+  on('process.run', () => {
+    runs += 1
+    return { value: ran }
+  })
+
+  await $.session.measure({ context: { tokens: 121_000, window: 1_000_000, percent: 12 }, rateLimits: [], changed: ['context'] })
+
+  expect(runs).toBe(0)
+})
+
+test('a failed ingest leaves the measurement whole', async ($, on) => {
+  on('session.measure', ($, e) => ({ changed: e.changed }))
+  on('session.usage', () => ({ value: usage }))
+  on('session.id', () => ({ value: 'b1d2c3e4-0000-4000-8000-000000000001' }))
+  on('process.run', () => ({ value: { ...ran, exitCode: 1, stderr: 'ingest: unknown version 1\n' } }))
+
+  // The engine skips the hook and reports its error; the session goes on.
+  const measured = await $.session.measure({ context: { tokens: 121_000, window: 1_000_000, percent: 12 }, rateLimits: [], changed: ['context'] })
+  expect(measured).toEqual({ changed: ['context'] })
+})

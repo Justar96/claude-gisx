@@ -8,6 +8,7 @@ import (
 	"regexp"
 	"runtime"
 	"strings"
+	"time"
 )
 
 func jsonStr(v any) string {
@@ -342,6 +343,7 @@ func statusCmd() int {
 	switch v := modVersion(); {
 	case isOurMod(modDir()):
 		row("mod", okMark+" gisx "+verLabel(v)+"  "+dim+modDir()+reset)
+		row("reports", modReportLabel(lastCtxReport(), time.Now()))
 	case v != "":
 		row("mod", yellow+"other"+reset+"  "+dim+modDir()+reset)
 	default:
@@ -349,4 +351,22 @@ func statusCmd() int {
 	}
 	fmt.Println()
 	return 0
+}
+
+// modReportLabel says whether Claude Code runs the installed mod: a mod that
+// has never written a breakdown is on disk but not loaded (a Claude Code
+// older than 2.1.287, mods turned off, or no session started since setup).
+func modReportLabel(last, now time.Time) string {
+	if last.IsZero() {
+		return yellow + "none yet" + reset + "  " + dim + "start a Claude Code session (2.1.287+) and send a prompt" + reset
+	}
+	age := now.Sub(last)
+	ago := "just now"
+	switch {
+	case age >= 48*time.Hour:
+		ago = fmt.Sprintf("%dd ago", int(age.Hours()/24))
+	case age >= time.Minute:
+		ago = fmtDuration(age.Milliseconds()) + " ago"
+	}
+	return okMark + " last breakdown " + ago
 }
